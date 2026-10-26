@@ -20,10 +20,6 @@ Each spec has two files:
 - If only one package uses a term, define the term in `spec/<package>/00_context.md` of that package.
 - Other specs refer to the file that defines the term.
 
-## Procedures
-
-To add or write a spec, read `spec/writing-specs.md`.
-
 ## Specs
 
 Each package folder has a `spec/<package>/00_context.md` file. This file contains the Vocab of the package, then the list of its specs.
