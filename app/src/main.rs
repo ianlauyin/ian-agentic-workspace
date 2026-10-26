@@ -14,7 +14,7 @@ use crate::db::Db;
 
 const ADDR: &str = "127.0.0.1:47322";
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
-const WEB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/web/dist");
+const WEB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/web");
 // the browser routes these paths, so each one returns index.html
 const PAGE_PATHS: [&str; 2] = ["/", "/todo"];
 
@@ -34,7 +34,7 @@ fn app(db: Arc<Db>, web_dir: &str) -> Router {
         router = router.route(path, get_service(index.clone()));
     }
     router
-        // the files are read from the disk on each request, so a new web build needs no restart
+        // the files are read from the disk on each request, so a web edit needs no restart
         .fallback_service(ServeDir::new(web_dir))
         .layer(axum::middleware::map_response(json_error))
         .with_state(db)

@@ -1,13 +1,13 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 
-import type { Api } from "../../../src/context";
-import { createTodo, type TodoItem } from "../../../src/module/todo/context";
+import { createTodo } from "../../todo/context.js";
 
-function fakeApi(saved: { items: TodoItem[] } | null) {
-  const saves: unknown[] = [];
+function fakeApi(saved) {
+  const saves = [];
   let failSave = false;
-  const api: Api = {
-    loadPage: async <T>() => saved as T | null,
+  const api = {
+    loadPage: async () => saved,
     savePage: async (name, data) => {
       if (failSave) throw new Error("db down");
       saves.push({ name, data });
@@ -16,28 +16,28 @@ function fakeApi(saved: { items: TodoItem[] } | null) {
   return { api, saves, failSaves: () => (failSave = true) };
 }
 
-const texts = (todo: ReturnType<typeof createTodo>) => todo.items().map((item) => item.text);
+const texts = (todo) => todo.state.items.map((item) => item.text);
 
 describe("createTodo", () => {
   it("loads the saved list", async () => {
     const todo = createTodo(fakeApi({ items: [{ text: "a" }] }).api);
     await todo.load();
-    expect(todo.loaded()).toBe(true);
-    expect(texts(todo)).toEqual(["a"]);
+    assert.equal(todo.state.loaded, true);
+    assert.deepEqual(texts(todo), ["a"]);
   });
 
   it("loads an empty list when there is no save", async () => {
     const todo = createTodo(fakeApi(null).api);
     await todo.load();
-    expect(todo.items()).toEqual([]);
+    assert.deepEqual(todo.state.items, []);
   });
 
   it("shows the error when the load fails", async () => {
-    const api: Api = { loadPage: async () => Promise.reject(new Error("db down")), savePage: async () => {} };
+    const api = { loadPage: async () => Promise.reject(new Error("db down")), savePage: async () => {} };
     const todo = createTodo(api);
     await todo.load();
-    expect(todo.loaded()).toBe(false);
-    expect(todo.error()).toBe("Failed to load my TODOs: db down");
+    assert.equal(todo.state.loaded, false);
+    assert.equal(todo.state.error, "Failed to load my TODOs: db down");
   });
 
   it("saves the full list as todo-items on add", async () => {
@@ -45,8 +45,8 @@ describe("createTodo", () => {
     const todo = createTodo(fake.api);
     await todo.load();
     await todo.add("  b  ");
-    expect(fake.saves).toEqual([{ name: "todo-items", data: { items: [{ text: "a" }, { text: "b" }] } }]);
-    expect(texts(todo)).toEqual(["a", "b"]);
+    assert.deepEqual(fake.saves, [{ name: "todo-items", data: { items: [{ text: "a" }, { text: "b" }] } }]);
+    assert.deepEqual(texts(todo), ["a", "b"]);
   });
 
   it("does not add or change a TODO with an empty text", async () => {
@@ -55,17 +55,17 @@ describe("createTodo", () => {
     await todo.load();
     await todo.add("   ");
     await todo.edit(0, "");
-    expect(fake.saves).toEqual([]);
-    expect(texts(todo)).toEqual(["a"]);
+    assert.deepEqual(fake.saves, []);
+    assert.deepEqual(texts(todo), ["a"]);
   });
 
   it("edits and removes a TODO", async () => {
     const todo = createTodo(fakeApi({ items: [{ text: "a" }, { text: "b" }] }).api);
     await todo.load();
     await todo.edit(1, "c");
-    expect(texts(todo)).toEqual(["a", "c"]);
+    assert.deepEqual(texts(todo), ["a", "c"]);
     await todo.remove(0);
-    expect(texts(todo)).toEqual(["c"]);
+    assert.deepEqual(texts(todo), ["c"]);
   });
 
   it("moves a TODO to a gap", async () => {
@@ -73,12 +73,12 @@ describe("createTodo", () => {
     const todo = createTodo(fake.api);
     await todo.load();
     await todo.move(0, 3);
-    expect(texts(todo)).toEqual(["b", "c", "a"]);
+    assert.deepEqual(texts(todo), ["b", "c", "a"]);
     await todo.move(2, 0);
-    expect(texts(todo)).toEqual(["a", "b", "c"]);
+    assert.deepEqual(texts(todo), ["a", "b", "c"]);
     await todo.move(1, 1);
     await todo.move(1, 2);
-    expect(fake.saves).toHaveLength(2);
+    assert.equal(fake.saves.length, 2);
   });
 
   it("keeps the last saved list when a save fails", async () => {
@@ -87,7 +87,15 @@ describe("createTodo", () => {
     await todo.load();
     fake.failSaves();
     await todo.add("b");
-    expect(texts(todo)).toEqual(["a"]);
-    expect(todo.error()).toBe("Failed to save: db down");
+    assert.deepEqual(texts(todo), ["a"]);
+    assert.equal(todo.state.error, "Failed to save: db down");
+  });
+
+  it("calls onChange after each change", async () => {
+    let changes = 0;
+    const todo = createTodo(fakeApi({ items: [] }).api, () => changes++);
+    await todo.load();
+    await todo.add("a");
+    assert.equal(changes, 2);
   });
 });
