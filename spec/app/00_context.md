@@ -2,12 +2,17 @@
 
 The app is a local server for the user. It is modeled on the ub-command-center app.
 
+## Rules
+
+- The frontend in `app/web/` uses plain HTML, JavaScript, and CSS. Thus, the app does not obey the "Frontend (SolidJS + TypeScript)" section of `rules/coding-style.md`.
+- The app obeys the other sections of `rules/coding-style.md`.
+
 ## Vocab
 
 
 | Term      | Meaning                                                             |
 | --------- | ------------------------------------------------------------------- |
-| Page      | A browser view in the tab bar. Each page is a folder in `app/web/`.                 |
+| Page      | A browser view in the tab bar. Each page is a folder in `app/web/`. |
 | Page data | One JSON value that a page saves in the local DB, by page name.     |
 
 
