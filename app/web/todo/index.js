@@ -37,6 +37,23 @@ export default function mount(root) {
     renderItems();
   }
 
+  // the index of the row in a drag, or null
+  let from = null;
+
+  // moves the item at index from to the gap before index to
+  function move(list, from, to) {
+    const next = list.toSpliced(from, 1);
+    next.splice(to > from ? to - 1 : to, 0, list[from]);
+    return next;
+  }
+
+  function markDrop(row, e) {
+    const box = row.getBoundingClientRect();
+    const after = e.clientY > box.top + box.height / 2;
+    for (const r of row.parentNode.children) r.classList.remove("before", "after");
+    row.classList.add(after ? "after" : "before");
+  }
+
   function renderItems(editing) {
     const box = $("items");
     box.replaceChildren();
@@ -48,16 +65,32 @@ export default function mount(root) {
         input.onkeydown = (e) => { if (e.key === "Enter") done(); if (e.key === "Escape") renderItems(); };
         setTimeout(() => input.focus());
         return el("tr", {},
+          el("td", { className: "drag" }),
           el("td", { className: "text" }, input),
           el("td", { className: "act" },
             el("button", { onclick: done }, "Save"),
             el("button", { className: "del", onclick: () => renderItems() }, "Cancel")));
       }
-      return el("tr", {},
+      const handle = el("td", { className: "drag", title: "Drag to reorder" }, "⋮⋮");
+      // only the handle starts a drag, so the user can still select the text
+      handle.onmousedown = () => { row.draggable = true; };
+      handle.onmouseup = () => { row.draggable = false; };
+      const row = el("tr", {
+        ondragstart: (e) => { from = i; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", it.text); row.classList.add("dragging"); },
+        ondragend: () => { row.draggable = false; from = null; renderItems(); },
+        ondragover: (e) => { if (from === null) return; e.preventDefault(); markDrop(row, e); },
+        ondrop: (e) => {
+          e.preventDefault();
+          const to = i + (row.classList.contains("after") ? 1 : 0);
+          if (from !== null && to !== from && to !== from + 1) save(move(items, from, to));
+        },
+      },
+        handle,
         el("td", { className: "text" }, it.text),
         el("td", { className: "act" },
           el("button", { onclick: () => renderItems(i) }, "Edit"),
           el("button", { className: "del", onclick: () => confirm(`Delete "${it.text}"?`) && save(items.toSpliced(i, 1)) }, "Delete")));
+      return row;
     });
     box.append(el("div", { className: "wrap" }, el("table", {}, el("tbody", {}, ...rows))));
   }
