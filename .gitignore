@@ -8,3 +8,7 @@
 
 # Local config
 conf/
+
+# App
+app/target/
+app/data/

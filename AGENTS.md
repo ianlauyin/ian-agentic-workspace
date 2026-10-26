@@ -26,3 +26,7 @@ This repo is a workspace for a primary agent. The primary agent gives the work t
 ## Skills
 
 Before you read or edit a different repo, read `skills/call-subagent.md`.
+
+## App
+
+The workspace has a local server app in `app/`. Before you change it, read `spec/app/00_context.md`.
