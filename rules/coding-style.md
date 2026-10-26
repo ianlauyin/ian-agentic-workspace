@@ -1,6 +1,6 @@
 # Coding style
 
-fix all warning after refactor
+After a refactor, fix all the warnings.
 
 ## Duplication and readability
 
@@ -30,7 +30,7 @@ fix all warning after refactor
 
 ### Source files
 
-- Use the struct name in snake case as the folder / file name. Example: `log_shipper/` for `LogShipper`.
+- Use the struct name in snake case as the folder name or the file name.
 - Keep a helper, a constant or a type in the file that uses it. If more than one file in a folder uses it, keep it in the file that owns it and make it `pub(super)`. If no file owns it, put it in `mod.rs`.
 - Put the tests in one `#[cfg(test)] mod tests` at the end of the source file that holds the tested item. Start it with `use super::*;`.
 - In a struct folder, `mod.rs` holds the struct, its private state types, its trait impls, its small accessors, the shared items and the tests for these items.
@@ -58,12 +58,12 @@ fix all warning after refactor
 
 ## Frontend (SolidJS + TypeScript)
 
-### Project Structure
+### Project structure
 
 - Put UI primitives and controls that have no domain logic in `src/component/**`.
 - A module is one feature. It has its own state, its own actions and its own entry component.
-- Put each module in `src/module/{module}`. Example: `src/module/login`.
-- An area folder is optional. You can put the modules of the same business area in one folder: `src/module/{area}/{module}`. Example: `src/module/wallet/deposit`.
+- Put each module in `src/module/{module}`.
+- An area folder is optional. You can put the modules of the same business area in one folder: `src/module/{area}/{module}`.
 
 ### Contexts
 
@@ -80,7 +80,7 @@ fix all warning after refactor
 
 - Give each page an id selector.
 - If only one component uses a sub-component, put the sub-component in the folder of that component.
-- Put constants before the component. For example: `const MIN_TRANSFER_AMOUNT = 0.01;`.
+- Put the constants before the component.
 - If the component has no styles, use the file `Xxx.tsx`.
 - If the component has styles, use the files `Xxx/index.tsx` and `Xxx/index.css`.
 - Put the images for the component in an `asset/` folder next to the component.
@@ -91,7 +91,7 @@ fix all warning after refactor
 - Nest each child selector inside the block of its parent.
 - To check nested selectors, run `pnpm lint:css`.
 
-### Class Names
+### Class names
 
 - Give the outermost tag of each module component and sub-component a class name. Use this format: `{module}-{component}-{sub-component}...`.
 - Give the outermost tag of each component in `src/component` a class name with the `g-` prefix.
