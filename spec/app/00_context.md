@@ -2,8 +2,6 @@
 
 The app is a local server for the user. It is modeled on the ub-command-center app.
 
-The user starts the server from `app/` with `cargo watch -w src -x run`.
-
 ## Vocab
 
 
