@@ -8,8 +8,6 @@ Update `business-logic.md` when the change affects user-visible behaviour, a dom
 
 If the code does not obey a rule in `business-logic.md`, and the task did not tell you to change that rule, stop and ask. The code can be incorrect.
 
-If no spec describes the changed flow, write this in the report. Do not make a new spec unless the user tells you to. To make a new spec, read `spec/writing-specs.md`.
-
 In the report, write the list of the spec files that you updated. If you did not update a spec, write the reason.
 
 Do not update a spec only for these changes:

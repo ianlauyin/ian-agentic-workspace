@@ -1,5 +1,17 @@
 # Ian's Personal Agentic Workspace
 
+This repo is a workspace for a primary agent. The primary agent gives the work to subagents. Each subagent does its work in a different repo. All agents must obey the rules in this workspace.
+
+## Roles
+
+| Agent | Work | Rules |
+| --- | --- | --- |
+| Primary agent | Splits the task, finds the target repo, calls a subagent for each part, checks the result and reports to the user | The rules in `AGENTS.md` and `rules/` |
+| Subagent | Does one part of the task in one target repo | The rules in `rules/` of this workspace, and the instructions of the target repo |
+
+- The primary agent does not edit the code of a different repo. It calls a subagent.
+- If a rule in this workspace and an instruction of the target repo are different, obey the rule in this workspace.
+
 ## Rules
 
 | File | When to read |
