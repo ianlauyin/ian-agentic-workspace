@@ -13,8 +13,8 @@
 
 ## Pages
 
-- `GET /` and all page paths return `app/web/index.html`.
-- All other `GET` requests return a file from `app/web/`.
+- `GET /` and all page paths return `app/web/dist/index.html`.
+- All other `GET` requests return a file from `app/web/dist/`.
 - The tab bar has a link to each page. It marks the current page.
 - An unknown page path in the browser shows `/todo`.
 

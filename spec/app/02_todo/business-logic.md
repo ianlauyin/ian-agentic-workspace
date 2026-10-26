@@ -12,3 +12,4 @@
 - Each change saves the full list with `PUT /page`, as `todo-items`, with the data `{"items": [{"text": "..."}]}`.
 - When the page opens, it loads `todo-items` with `GET /page`.
 - If a save fails, the page shows the error and keeps the last saved list.
+- If the load fails, the page shows the error. The Add button stays disabled. Thus, a save cannot replace the saved list with an empty list.

@@ -1,0 +1,19 @@
+.todo-page {
+  > .note {
+    color: var(--muted);
+  }
+
+  > .error {
+    color: var(--bad);
+    white-space: pre-wrap;
+  }
+
+  > .list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+}
