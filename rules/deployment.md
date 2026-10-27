@@ -10,3 +10,4 @@
 
 - Do not run a `gcloud` command yourself. Only the user runs a `gcloud` command. This rule applies also to a command that only reads data.
 - Give the full command to the user. Then tell the user to run it with the `!` prefix, so that the output comes into the conversation.
+- A VM accepts SSH only through IAP. In each `gcloud compute ssh` or `gcloud compute scp` command, add `--tunnel-through-iap`.
