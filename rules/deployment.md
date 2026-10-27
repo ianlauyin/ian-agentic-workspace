@@ -6,6 +6,10 @@
 - Use the same Debian release for the build image and the runtime image or VM. Then the binary and the system libraries agree.
 - On GCE, use the image project `debian-cloud`.
 
+## Public access
+
+Before you design a deploy, read how the other repos in `conf/projects.json` deploy. Use the same design.
+
 ## gcloud commands
 
 - Do not run a `gcloud` command yourself. Only the user runs a `gcloud` command. This rule applies also to a command that only reads data.
