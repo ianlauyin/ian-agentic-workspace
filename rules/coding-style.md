@@ -15,6 +15,7 @@
 
 - In a source file, put the imports and the constants first. Then put each public type, its inherent `impl` block with the public methods first, and its trait impls (`Debug`, `Display`).
 - In a file two or more levels deep, use `crate::` paths. Do not use `super::super::`.
+- In a library crate, make the public path of an item follow its module folders. Each folder in `src/` is a public module. Each folder directly in that folder is also a public module. Export each item from the deepest of these public modules that contains its file. Do not export the item again from a parent module.
 - Keep a helper, a constant or a type in the file that uses it.
 - Put the tests in one `#[cfg(test)] mod tests` at the end of the source file that holds the tested item. Keep each test helper in that test module. Do not share test helpers between test modules.
 - Keep all test-only code in a test module. This includes test constructors, test-only methods and test doubles. Do not add a `#[cfg(test)]` item to the production code. An exception is a `#[cfg(test)]` enum variant and its match arms, because they cannot go in a different module.
