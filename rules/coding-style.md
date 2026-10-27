@@ -17,6 +17,8 @@
 - In a file two or more levels deep, use `crate::` paths. Do not use `super::super::`.
 - Keep a helper, a constant or a type in the file that uses it.
 - Put the tests in one `#[cfg(test)] mod tests` at the end of the source file that holds the tested item. Keep each test helper in that test module. Do not share test helpers between test modules.
+- Keep all test-only code in a test module. This includes test constructors, test-only methods and test doubles. Do not add a `#[cfg(test)]` item to the production code. An exception is a `#[cfg(test)]` enum variant and its match arms, because they cannot go in a different module.
+- If the tests of two or more files use a test-only item, put the item in the `#[cfg(test)] mod tests` of the parent module. The other test modules can use it.
 
 ### Safety
 
