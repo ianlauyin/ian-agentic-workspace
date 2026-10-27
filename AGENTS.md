@@ -28,6 +28,7 @@ If the user tells you an error or a preference, update the applicable file in th
 | File | When to read |
 | --- | --- |
 | `rules/coding-style.md` | Before the first edit |
+| `rules/debugging.md` | Before you fix a bug or find the cause of an error |
 | `rules/deployment.md` | Before you write or change deploy files, give deploy commands, or need a `gcloud` command |
 | `rules/git-convention.md` | Before you make a git commit |
 | `rules/spec-update.md` | After you change the code |
