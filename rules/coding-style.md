@@ -17,6 +17,7 @@
 - In a file two or more levels deep, use `crate::` paths. Do not use `super::super::`.
 - In a library crate, make the public path of an item follow its module folders. Each folder in `src/` is a public module. Each folder directly in that folder is also a public module. Export each item from the deepest of these public modules that contains its file. Do not export the item again from a parent module.
 - To use an item of `ian_framework`, import the public module that exports the item. Then use the module name in the code to refer to the item. Do not import the item directly. Do not write the full `ian_framework::` path in the code.
+- If a module of the project has the same name as the `ian_framework` module, import the functions and the types of the project module directly. Do not import the project module. Do not give an alias to the `ian_framework` module.
 - Keep a helper, a constant or a type in the file that uses it.
 - Put the tests in one `#[cfg(test)] mod tests` at the end of the source file that holds the tested item. Keep each test helper in that test module. Do not share test helpers between test modules.
 - Keep all test-only code in a test module. This includes test constructors, test-only methods and test doubles. Do not add a `#[cfg(test)]` item to the production code. An exception is a `#[cfg(test)]` enum variant and its match arms, because they cannot go in a different module.
