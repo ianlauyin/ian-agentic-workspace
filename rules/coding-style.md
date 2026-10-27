@@ -32,6 +32,7 @@
 
 - Do not show a secret, a token or a query string in `Debug` output or in an error message. For a type that holds a secret, write its `Debug` impl by hand.
 - Do not use `unwrap`, `expect` or `panic!` outside tests.
+- Read a secret, such as a key, a token or a password, from Secret Manager with `env::required` or `env::optional`. Read a value that is not a secret, such as a bucket name, a list, a path, a URL or a log level, only from the process environment with `std::env::var`. Do not read it from Secret Manager. When a value is not a secret, do not create a secret for it. In a review, check each env variable against this rule.
 
 ## Frontend (SolidJS + TypeScript)
 
