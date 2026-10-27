@@ -10,6 +10,7 @@
 
 - Use JSON for the request and the response unless the route needs special handling.
 - Do not write doc comments.
+- When a cargo feature only adds a step to a function, write one function. Put the step in a `#[cfg(feature = "...")]` block, with an early return when the step gives the result. Do not write a second copy of the function for `#[cfg(not(feature = "..."))]`.
 
 ### Files
 
@@ -21,6 +22,7 @@
 - Do not use `self` in an import. To use a module and an item of that module, import only the module. Then use the module name to refer to the item.
 - Keep a helper, a constant or a type in the file that uses it.
 - In a library crate, put a public helper in the public module of its domain. Put a time or time zone helper in the `time` module. Do not put the helper in the module of the first item that uses it.
+- In the tests of a shared library such as `ian_framework`, do not use a name from a project of the user. This includes repo names, app ids, env variable names, secret names, GCP project ids, service accounts and bucket names. Use generic names, for example `my-app`, `my-project` and `APP_KEY`.
 - Put the tests in one `#[cfg(test)] mod tests` at the end of the source file that holds the tested item. Keep each test helper in that test module. Do not share test helpers between test modules.
 - Keep all test-only code in a test module. This includes test constructors, test-only methods and test doubles. Do not add a `#[cfg(test)]` item to the production code. An exception is a `#[cfg(test)]` enum variant and its match arms, because they cannot go in a different module.
 - If the tests of two or more files use a test-only item, put the item in the `#[cfg(test)] mod tests` of the parent module. The other test modules can use it.
