@@ -10,6 +10,7 @@
 
 - Use JSON for the request and the response unless the route needs special handling.
 - Do not write doc comments.
+- Do not write a request log event for a website static file request. This includes the SPA fallback that sends `index.html`. Write a request log event for each API request.
 - A shared library such as `ian_framework` does not read an env variable of its own name for an app setting. The project reads its env variables, with the names that the project chooses, and gives the values to the library. A library helper that reads a variable by a name that the caller gives, such as `env::required`, is allowed.
 - When a cargo feature only adds a step to a function, write one function. Put the step in a `#[cfg(feature = "...")]` block, with an early return when the step gives the result. Do not write a second copy of the function for `#[cfg(not(feature = "..."))]`.
 

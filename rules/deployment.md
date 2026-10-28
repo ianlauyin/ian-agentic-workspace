@@ -12,6 +12,7 @@ Before you design a deploy, read how the other repos in `conf/projects.json` dep
 
 ## gcloud commands
 
-- Do not run a `gcloud` command yourself. Only the user runs a `gcloud` command. This rule applies also to a command that only reads data.
-- Give the full command to the user. Then tell the user to run it with the `!` prefix, so that the output comes into the conversation.
+- You can run a `gcloud` command that only reads data.
+- Do not run a `gcloud` command that creates, changes or deletes a resource. Only the user runs this command.
+- For a command that the user runs, give the full command. Then tell the user to run it with the `!` prefix, so that the output comes into the conversation.
 - A VM accepts SSH only through IAP. In each `gcloud compute ssh` or `gcloud compute scp` command, add `--tunnel-through-iap`.
