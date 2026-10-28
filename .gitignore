@@ -12,3 +12,6 @@ conf/
 # App
 app/target/
 app/data/
+
+# Reports
+report/
