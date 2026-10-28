@@ -15,7 +15,7 @@ The subagent does not start in this workspace. Thus, in each task prompt, write 
 - The absolute path of this workspace.
 - An instruction to read the "Rules" table in `AGENTS.md` of this workspace, and to obey each rule file at the given time.
 - An instruction to obey the instructions of the target repo when they are different from the rules of this workspace.
-- An instruction to write the report as `rules/spec-update.md` tells.
+- An instruction to write the report as `rules/report.md` tells.
 
 ## Worker messages
 

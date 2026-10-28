@@ -32,12 +32,16 @@ If the user tells you an error or a preference, update the applicable file in th
 | `rules/env-file.md` | Before you read a file, run a command or use an env variable |
 | `rules/deployment.md` | Before you write or change deploy files, give deploy commands, or need a `gcloud` command |
 | `rules/git-convention.md` | Before you make a git commit |
+| `rules/report.md` | Before you write a report |
 | `rules/spec-update.md` | After you change the code |
 | `rules/writing.md` | Before you write or update a markdown file |
 
 ## Skills
 
-Before you read or edit a different repo, read `skills/call-subagent.md`.
+| File | When to read |
+| --- | --- |
+| `skills/call-subagent.md` | Before you read or edit a different repo |
+| `skills/fetch-logs.md` | Before you get the log events of a project |
 
 ## App
 
