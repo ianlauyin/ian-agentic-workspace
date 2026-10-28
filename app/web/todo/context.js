@@ -1,13 +1,16 @@
 const PAGE_NAME = "todo-items";
 
+export const SECTIONS = ["important", "pending"];
+
 // onChange runs after each change of the state, so the page can render again
 export function createTodo(api, onChange = () => {}) {
-  const state = { items: [], loaded: false, error: "" };
+  const state = { lists: { important: [], pending: [] }, loaded: false, error: "" };
 
   async function load() {
     try {
       const data = await api.loadPage(PAGE_NAME);
-      state.items = data?.items ?? [];
+      // the old data has only one list, in items
+      state.lists = { important: data?.important ?? [], pending: data?.pending ?? data?.items ?? [] };
       state.loaded = true;
       state.error = "";
     } catch (e) {
@@ -16,11 +19,11 @@ export function createTodo(api, onChange = () => {}) {
     onChange();
   }
 
-  // items changes only after the save, so a failed save keeps the last saved list
+  // lists changes only after the save, so a failed save keeps the last saved lists
   async function save(next) {
     try {
-      await api.savePage(PAGE_NAME, { items: next });
-      state.items = next;
+      await api.savePage(PAGE_NAME, next);
+      state.lists = next;
       state.error = "";
     } catch (e) {
       state.error = `Failed to save: ${e.message}`;
@@ -28,26 +31,37 @@ export function createTodo(api, onChange = () => {}) {
     onChange();
   }
 
-  async function add(text) {
+  async function add(section, text) {
     const trimmed = text.trim();
-    if (trimmed) await save([...state.items, { text: trimmed }]);
+    if (trimmed) await save({ ...state.lists, [section]: [...state.lists[section], { text: trimmed }] });
   }
 
-  async function edit(index, text) {
+  async function edit(section, index, text) {
     const trimmed = text.trim();
-    if (trimmed) await save(state.items.with(index, { ...state.items[index], text: trimmed }));
+    const items = state.lists[section];
+    if (trimmed) await save({ ...state.lists, [section]: items.with(index, { ...items[index], text: trimmed }) });
   }
 
-  async function remove(index) {
-    await save(state.items.toSpliced(index, 1));
+  async function remove(section, index) {
+    await save({ ...state.lists, [section]: state.lists[section].toSpliced(index, 1) });
   }
 
-  // gap is the index of the gap between the rows: 0 is before the first row, items.length is after the last row
-  async function move(from, gap) {
-    if (gap === from || gap === from + 1) return;
-    const next = state.items.toSpliced(from, 1);
-    next.splice(gap > from ? gap - 1 : gap, 0, state.items[from]);
-    await save(next);
+  // gap is the index of the gap between the rows of the target section: 0 is before the first row, items.length is after the last row
+  async function move(fromSection, from, toSection, gap) {
+    if (fromSection === toSection) {
+      if (gap === from || gap === from + 1) return;
+      const items = state.lists[fromSection];
+      const next = items.toSpliced(from, 1);
+      next.splice(gap > from ? gap - 1 : gap, 0, items[from]);
+      await save({ ...state.lists, [fromSection]: next });
+      return;
+    }
+    const item = state.lists[fromSection][from];
+    await save({
+      ...state.lists,
+      [fromSection]: state.lists[fromSection].toSpliced(from, 1),
+      [toSection]: state.lists[toSection].toSpliced(gap, 0, item),
+    });
   }
 
   return { state, load, add, edit, remove, move };
