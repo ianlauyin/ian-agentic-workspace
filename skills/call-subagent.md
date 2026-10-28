@@ -4,6 +4,10 @@
 - The subagent works on the default branch of that repo.
 - The repos are in `conf/projects.json`.
 
+## Agent and model
+
+- Start each subagent with Cursor and the Grok 4.7 model at high effort. Give `--agent cursor --model grok-4.7-high` to `orca orchestration worker-start`.
+
 ## Task prompt
 
 The subagent does not start in this workspace. Thus, in each task prompt, write these items:
