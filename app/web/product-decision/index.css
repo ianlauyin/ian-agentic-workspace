@@ -1,0 +1,146 @@
+.product-decision-page {
+  > .stats {
+    color: var(--muted);
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  > .error {
+    color: var(--bad);
+    white-space: pre-wrap;
+  }
+
+  .product-decision-page-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 32px;
+
+    > h2 {
+      margin-bottom: 0;
+    }
+
+    > .source {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+  }
+
+  .product-decision-page-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--line);
+    border-radius: 10px;
+
+    &.decided {
+      border-left-color: var(--accent);
+
+      .status {
+        color: var(--accent);
+      }
+    }
+
+    > .head {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+
+      > .num {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      > h3 {
+        flex: 1;
+        margin: 0;
+        font-size: 16px;
+      }
+
+      > .status {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+    }
+
+    > .fields {
+      display: grid;
+      grid-template-columns: 130px 1fr;
+      gap: 8px 14px;
+      margin: 0;
+      font-size: 14px;
+
+      > dt {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        padding-top: 2px;
+      }
+
+      > dd {
+        margin: 0;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .scope {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+
+        > .tag {
+          font-size: 12px;
+          border: 1px solid var(--line);
+          border-radius: 4px;
+          padding: 0 6px;
+        }
+      }
+
+      .options {
+        margin: 0;
+        padding-left: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+
+        > .recommended > .label {
+          color: var(--accent);
+          font-size: 12px;
+          font-weight: 600;
+          margin-right: 6px;
+        }
+      }
+    }
+
+    > .decide-form {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+
+      > label {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        color: var(--muted);
+        font-size: 12px;
+
+        > textarea {
+          resize: vertical;
+          font-size: 14px;
+        }
+      }
+    }
+  }
+
+  @media (max-width: 560px) {
+    .product-decision-page-card > .fields {
+      grid-template-columns: 1fr;
+    }
+  }
+}

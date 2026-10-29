@@ -1,4 +1,7 @@
-const PAGES = [{ path: "/todo", title: "TODO", module: "/todo/index.js" }];
+const PAGES = [
+  { path: "/todo", title: "TODO", module: "/todo/index.js" },
+  { path: "/product-decision", title: "Product Decision", module: "/product-decision/index.js" },
+];
 const HOME = "/todo";
 
 async function request(path, init) {

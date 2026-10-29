@@ -2,7 +2,7 @@
 
 ## Layout
 
-- `app/src/main.rs` builds the router and starts the server. It also changes each plain-text error of axum and tower-http to JSON.
+- `app/src/main.rs` builds the router and starts the server. It also changes each plain-text error of axum and tower-http to JSON. The `/decisions` route reads `conf/decisions.json` from the disk for each request.
 - `app/src/page.rs` holds the `/page` routes and the check of the page name.
 - `app/src/db.rs` holds the DB access.
 - `app/web/` is the frontend. It uses plain HTML, JavaScript modules, and CSS. It has no build step and no packages.
