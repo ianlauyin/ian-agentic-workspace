@@ -1,4 +1,4 @@
-import { createOpenBehaviour, decisionKey, groupsByStatus } from "./context.js";
+import { createOpenBehaviour, decisionKey, groupsByStatus, withKind } from "./context.js";
 
 const CSS = "/open-behaviour/index.css";
 const KINDS = { bug: "Bug", decision: "Needs decision", cleanup: "Cleanup" };
@@ -37,19 +37,34 @@ export function mount(main, api) {
   const cards = new Map();
   const panels = new Map();
   let selected = "";
+  let kind = "";
   let built = false;
 
   main.innerHTML = `
     <div id="open-behaviour" class="open-behaviour-page">
       <h1>Open Behaviour</h1>
       <div class="open-behaviour-page-tabs"></div>
+      <div class="open-behaviour-page-kinds" hidden></div>
       <p class="stats" hidden></p>
       <p class="error" hidden></p>
     </div>`;
   const page = main.querySelector(".open-behaviour-page");
   const tabsBar = page.querySelector(".open-behaviour-page-tabs");
+  const kindsBar = page.querySelector(".open-behaviour-page-kinds");
   const stats = page.querySelector(".stats");
   const error = page.querySelector(".error");
+
+  const kindButtons = Object.entries({ "": "All", ...KINDS }).map(([value, label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", () => {
+      kind = value;
+      render();
+    });
+    kindsBar.append(button);
+    return { value, button };
+  });
 
   function groupSection(group) {
     const section = document.createElement("section");
@@ -99,14 +114,12 @@ export function mount(main, api) {
         }
       }
       for (const slot of slots) panel.append(slot.decidedSection);
-      if (!tab.groups.some((group) => group.items.length > 0)) {
-        const empty = document.createElement("p");
-        empty.className = "empty";
-        empty.textContent = "No open item.";
-        panel.append(empty);
-      }
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "No open item.";
+      panel.append(empty);
       page.append(panel);
-      panels.set(tab.id, { button, badge, panel, slots });
+      panels.set(tab.id, { button, badge, panel, slots, empty });
     }
     built = true;
   }
@@ -159,7 +172,7 @@ export function mount(main, api) {
         <button class="g-button" type="submit" disabled>Save</button>
         <button class="g-button resolve" type="button" hidden>Resolve</button>
       </form>
-      <p class="resolve-log" hidden></p>`;
+      <p class="resolve-terminal" hidden></p>`;
     view.querySelector(".num").textContent = `#${item.id}`;
     appendText(view.querySelector("h3"), item.item);
     const kind = view.querySelector(".kind");
@@ -208,16 +221,17 @@ export function mount(main, api) {
 
     return {
       view,
+      kind: item.kind,
       input,
       saveButton,
       resolveButton,
-      resolveLog: view.querySelector(".resolve-log"),
+      resolveTerminal: view.querySelector(".resolve-terminal"),
       status: view.querySelector(".status"),
     };
   }
 
   function updateCard(key) {
-    const { view, input, saveButton, resolveButton, resolveLog, status } = cards.get(key);
+    const { view, input, saveButton, resolveButton, resolveTerminal, status } = cards.get(key);
     const saved = behaviour.state.decisions[key] ?? "";
     const resolve = behaviour.state.resolves[key] ?? "";
     const edited = input.value.trim() !== saved;
@@ -227,8 +241,8 @@ export function mount(main, api) {
     resolveButton.hidden = saved === "";
     resolveButton.disabled = edited || resolve !== "";
     resolveButton.textContent = resolve === "" ? "Resolve" : resolve === "starting" ? "Starting…" : "Started";
-    resolveLog.hidden = resolve === "" || resolve === "starting";
-    resolveLog.textContent = `The agent resolves this item. Log: ${resolve}`;
+    resolveTerminal.hidden = resolve === "" || resolve === "starting";
+    resolveTerminal.textContent = `The agent resolves this item in Orca terminal ${resolve}.`;
   }
 
   function render() {
@@ -238,17 +252,24 @@ export function mount(main, api) {
     if (!loaded) return;
     if (!built) build();
     if (!selected) selected = (tabs.find((tab) => tab.groups.some((group) => group.items.length > 0)) ?? tabs[0])?.id ?? "";
-    for (const key of cards.keys()) updateCard(key);
-    for (const tab of tabs) {
+    kindsBar.hidden = false;
+    for (const { value, button } of kindButtons) button.classList.toggle("on", value === kind);
+    for (const [key, card] of cards) {
+      updateCard(key);
+      card.view.hidden = kind !== "" && card.kind !== kind;
+    }
+    const shown = tabs.map((tab) => withKind(tab, kind));
+    for (const tab of shown) {
       const panel = panels.get(tab.id);
       placeCards(tab);
       panel.panel.hidden = tab.id !== selected;
       panel.button.classList.toggle("on", tab.id === selected);
+      panel.empty.hidden = tab.groups.some((group) => group.items.length > 0);
       const open = groupsByStatus(tab, decisions).open.reduce((sum, group) => sum + group.items.length, 0);
       panel.badge.textContent = open;
       panel.badge.hidden = open === 0;
     }
-    const tab = tabs.find((item) => item.id === selected);
+    const tab = shown.find((item) => item.id === selected);
     const total = tab ? tab.groups.reduce((sum, group) => sum + group.items.length, 0) : 0;
     const decided = tab
       ? tab.groups.reduce(

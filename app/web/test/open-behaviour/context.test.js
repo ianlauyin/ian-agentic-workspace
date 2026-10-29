@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createOpenBehaviour, decisionKey, groupsByStatus } from "../../open-behaviour/context.js";
+import { createOpenBehaviour, decisionKey, groupsByStatus, withKind } from "../../open-behaviour/context.js";
 
 const TABS = [
   {
@@ -23,7 +23,7 @@ function fakeApi(saved, tabs = TABS) {
     resolveOpenBehaviour: async (body) => {
       if (failResolve) throw new Error("no agent");
       resolves.push(body);
-      return { log: "app/data/resolve/1.log" };
+      return { terminal: "term_1" };
     },
     loadOpenBehaviour: async () => {
       if (failLoad) throw new Error(failLoad);
@@ -117,13 +117,13 @@ describe("resolve", () => {
   const group = tab.groups[0];
   const item = group.items[0];
 
-  it("starts the resolve with the saved decision and keeps the log path", async () => {
+  it("starts the resolve with the saved decision and keeps the terminal", async () => {
     const fake = fakeApi({ [KEY]: "a" });
     const behaviour = createOpenBehaviour(fake.api);
     await behaviour.load();
     await behaviour.resolve(tab, group, item);
     assert.deepEqual(fake.resolves, [{ tab: "my-app", spec: "01_login", id: 1, decision: "a" }]);
-    assert.deepEqual(behaviour.state.resolves, { [KEY]: "app/data/resolve/1.log" });
+    assert.deepEqual(behaviour.state.resolves, { [KEY]: "term_1" });
   });
 
   it("does not start an item with no decision or an item that started", async () => {
@@ -188,5 +188,39 @@ describe("groupsByStatus", () => {
       decided.map((group) => group.spec),
       ["02_pay"],
     );
+  });
+});
+
+const MIXED = {
+  id: "my-app",
+  name: "my-app",
+  groups: [
+    {
+      spec: "01_login",
+      title: "Login",
+      items: [
+        { id: 1, item: "Sign-in", kind: "bug" },
+        { id: 2, item: "Home", kind: "cleanup" },
+      ],
+    },
+    {
+      spec: "02_pay",
+      title: "Pay",
+      items: [{ id: 1, item: "Price", kind: "decision" }],
+    },
+  ],
+  errors: [],
+};
+
+describe("withKind", () => {
+  it("keeps all items when no kind is given", () => {
+    assert.equal(withKind(MIXED, ""), MIXED);
+  });
+
+  it("keeps only the items of the kind and omits a group with no item of the kind", () => {
+    assert.deepEqual(withKind(MIXED, "bug"), {
+      ...MIXED,
+      groups: [{ ...MIXED.groups[0], items: [MIXED.groups[0].items[0]] }],
+    });
   });
 });

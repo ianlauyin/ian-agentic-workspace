@@ -4,6 +4,14 @@ export function decisionKey(tab, group, item) {
   return `${tab.id}/${group.spec}/${item.id}`;
 }
 
+export function withKind(tab, kind) {
+  if (!kind) return tab;
+  const groups = tab.groups
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.kind === kind) }))
+    .filter((group) => group.items.length > 0);
+  return { ...tab, groups };
+}
+
 export function groupsByStatus(tab, decisions) {
   const open = [];
   const decided = [];
@@ -22,7 +30,7 @@ export function groupsByStatus(tab, decisions) {
 
 // onChange runs after each change of the state, so the page can render again
 export function createOpenBehaviour(api, onChange = () => {}) {
-  // resolves maps a decision key to "starting" or to the log path of the started run
+  // resolves maps a decision key to "starting" or to the Orca terminal handle
   const state = { tabs: [], decisions: {}, resolves: {}, loaded: false, error: "" };
 
   async function load() {
@@ -60,13 +68,13 @@ export function createOpenBehaviour(api, onChange = () => {}) {
     state.resolves = { ...state.resolves, [key]: "starting" };
     onChange();
     try {
-      const { log } = await api.resolveOpenBehaviour({
+      const { terminal } = await api.resolveOpenBehaviour({
         tab: tab.id,
         spec: group.spec,
         id: item.id,
         decision,
       });
-      state.resolves = { ...state.resolves, [key]: log };
+      state.resolves = { ...state.resolves, [key]: terminal };
       state.error = "";
     } catch (e) {
       const { [key]: _, ...rest } = state.resolves;
