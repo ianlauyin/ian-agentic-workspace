@@ -2,6 +2,13 @@ import { createOpenBehaviour, decisionKey, groupsByStatus, withKind } from "./co
 
 const CSS = "/open-behaviour/index.css";
 const KINDS = { bug: "Bug", decision: "Needs decision", cleanup: "Cleanup" };
+const PROGRESS_MS = 3000;
+const PROGRESS_STATUS = {
+  running: "The agent is working.",
+  finished: "The agent finished.",
+  failed: "The agent failed.",
+  stopped: "The agent stopped before it finished.",
+};
 
 // the open-behaviour files mark code with backticks
 function appendText(parent, text) {
@@ -172,7 +179,11 @@ export function mount(main, api) {
         <button class="g-button" type="submit" disabled>Save</button>
         <button class="g-button resolve" type="button" hidden>Resolve</button>
       </form>
-      <p class="resolve-chat" hidden></p>`;
+      <p class="resolve-chat" hidden></p>
+      <div class="resolve-progress" hidden>
+        <p class="state"></p>
+        <ol class="steps"></ol>
+      </div>`;
     view.querySelector(".num").textContent = `#${item.id}`;
     appendText(view.querySelector("h3"), item.item);
     const kind = view.querySelector(".kind");
@@ -226,12 +237,36 @@ export function mount(main, api) {
       saveButton,
       resolveButton,
       resolveChat: view.querySelector(".resolve-chat"),
+      resolveProgress: view.querySelector(".resolve-progress"),
       status: view.querySelector(".status"),
+      shownProgress: null,
     };
   }
 
+  // the steps are built again only when a step or the status is new, so the scroll stays when nothing changes
+  function updateProgress(card, progress) {
+    card.resolveProgress.hidden = !progress;
+    const shown = progress ? `${progress.status}/${progress.steps.length}` : null;
+    if (!progress || shown === card.shownProgress) return;
+    card.shownProgress = shown;
+    const state = card.resolveProgress.querySelector(".state");
+    state.textContent = PROGRESS_STATUS[progress.status] ?? `Failed to load the progress: ${progress.error}`;
+    state.className = `state ${progress.status}`;
+    const steps = card.resolveProgress.querySelector(".steps");
+    steps.replaceChildren(
+      ...progress.steps.map((step) => {
+        const li = document.createElement("li");
+        li.className = step.kind;
+        appendText(li, step.text);
+        return li;
+      }),
+    );
+    steps.scrollTop = steps.scrollHeight;
+  }
+
   function updateCard(key) {
-    const { view, input, saveButton, resolveButton, resolveChat, status } = cards.get(key);
+    const card = cards.get(key);
+    const { view, input, saveButton, resolveButton, resolveChat, status } = card;
     const saved = behaviour.state.decisions[key] ?? "";
     const resolve = behaviour.state.resolves[key] ?? "";
     const edited = input.value.trim() !== saved;
@@ -243,6 +278,7 @@ export function mount(main, api) {
     resolveButton.textContent = resolve === "" ? "Resolve" : resolve === "starting" ? "Starting…" : "Started";
     resolveChat.hidden = resolve === "" || resolve === "starting";
     resolveChat.textContent = `The agent resolves this item in Cursor chat ${resolve}. Run "cursor-agent --resume ${resolve}" to open it.`;
+    updateProgress(card, behaviour.state.progress[key]);
   }
 
   function render() {
@@ -282,5 +318,6 @@ export function mount(main, api) {
   }
 
   render();
-  void behaviour.load();
+  void behaviour.load().then(behaviour.refreshProgress);
+  setInterval(() => void behaviour.refreshProgress(), PROGRESS_MS);
 }

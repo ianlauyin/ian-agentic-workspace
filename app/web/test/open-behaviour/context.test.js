@@ -13,13 +13,19 @@ const TABS = [
 ];
 const KEY = "my-app/01_login/1";
 
-function fakeApi(saved, tabs = TABS, started = null) {
+function fakeApi(saved, tabs = TABS, started = null, progress = {}) {
   const saves = [];
   const resolves = [];
+  const progressLoads = [];
   let failSave = false;
   let failLoad = "";
   let failResolve = false;
   const api = {
+    loadResolveProgress: async (chat) => {
+      progressLoads.push(chat);
+      if (!progress[chat]) throw new Error("The chat has no log.");
+      return progress[chat];
+    },
     resolveOpenBehaviour: async (body) => {
       if (failResolve) throw new Error("no agent");
       resolves.push(body);
@@ -43,6 +49,7 @@ function fakeApi(saved, tabs = TABS, started = null) {
     api,
     saves,
     resolves,
+    progressLoads,
     failSaves: () => (failSave = true),
     failLoads: (message) => (failLoad = message),
     failResolves: () => (failResolve = true),
@@ -175,6 +182,49 @@ describe("resolve", () => {
     await behaviour.resolve(tab, group, item);
     assert.deepEqual(behaviour.state.resolves, { "my-app/01_login/2": "chat_9" });
     assert.equal(behaviour.state.error, "Failed to save: db down");
+  });
+});
+
+describe("refreshProgress", () => {
+  const RUNNING = { status: "running", steps: [{ kind: "tool", text: "read: a.md" }] };
+  const FINISHED = { status: "finished", steps: [{ kind: "message", text: "Done." }] };
+
+  it("loads the progress of each started resolve", async () => {
+    const started = { [KEY]: "chat_9", "my-app/01_login/2": "chat_8" };
+    const fake = fakeApi(null, TABS, started, { chat_9: RUNNING, chat_8: FINISHED });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.refreshProgress();
+    assert.deepEqual(behaviour.state.progress, { [KEY]: RUNNING, "my-app/01_login/2": FINISHED });
+  });
+
+  it("loads again only the progress of an agent that has not ended", async () => {
+    const started = { [KEY]: "chat_9", "my-app/01_login/2": "chat_8" };
+    const fake = fakeApi(null, TABS, started, { chat_9: RUNNING, chat_8: FINISHED });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.refreshProgress();
+    await behaviour.refreshProgress();
+    assert.deepEqual(fake.progressLoads, ["chat_9", "chat_8", "chat_9"]);
+  });
+
+  it("does not load the progress of a resolve that is starting", async () => {
+    const fake = fakeApi(null);
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    behaviour.state.resolves = { [KEY]: "starting" };
+    await behaviour.refreshProgress();
+    assert.deepEqual(fake.progressLoads, []);
+  });
+
+  it("keeps the error of a failed load and does not load it again", async () => {
+    const fake = fakeApi(null, TABS, { [KEY]: "chat_9" });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.refreshProgress();
+    await behaviour.refreshProgress();
+    assert.deepEqual(behaviour.state.progress, { [KEY]: { status: "error", steps: [], error: "The chat has no log." } });
+    assert.equal(fake.progressLoads.length, 1);
   });
 });
 

@@ -4,7 +4,7 @@
 
 - `app/src/main.rs` builds the router and starts the server. It also changes each plain-text error of axum and tower-http to JSON.
 - `app/src/page.rs` holds the `/page` routes and the check of the page name.
-- `app/src/open_behaviour.rs` holds the `/open-behaviour-items` route and the `/open-behaviour-resolve` route. Refer to `spec/app/03_open-behaviour/code-impl.md`.
+- `app/src/open_behaviour.rs` holds the `/open-behaviour-items` route, the `/open-behaviour-resolve` route, and the `/open-behaviour-progress` route. Refer to `spec/app/03_open-behaviour/code-impl.md`.
 - `app/src/db.rs` holds the DB access.
 - `app/web/` is the frontend. It uses plain HTML, JavaScript modules, and CSS. It has no build step and no packages.
 - `app/web/index.html` is the page shell. It has the tab bar and `main`.

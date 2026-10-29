@@ -33,7 +33,8 @@ fn app(db: Arc<Db>, web_dir: &str) -> Router {
     let mut router = Router::new()
         .route("/page", get(page::load).put(page::save))
         .route("/open-behaviour-items", get(open_behaviour::load))
-        .route("/open-behaviour-resolve", post(open_behaviour::resolve));
+        .route("/open-behaviour-resolve", post(open_behaviour::resolve))
+        .route("/open-behaviour-progress", get(open_behaviour::progress));
     for path in PAGE_PATHS {
         router = router.route(path, get_service(index.clone()));
     }
@@ -133,6 +134,9 @@ mod tests {
         let (status, body) = send(&app, get("/page")).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(error_of(&body).is_string());
+
+        let (status, body) = send(&app, get("/open-behaviour-progress?chat=..%2Fapp")).await;
+        assert_eq!((status, error_of(&body)), (StatusCode::BAD_REQUEST, json!("Bad chat id.")));
 
         let text = Request::put("/page").body(Body::from(r#"{"name":"a","data":1}"#)).unwrap();
         let (status, body) = send(&app, text).await;

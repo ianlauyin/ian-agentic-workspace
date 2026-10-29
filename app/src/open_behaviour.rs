@@ -1,8 +1,10 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use axum::Json;
+use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
@@ -15,6 +17,7 @@ const FILE_PATH: &str = "spec/open-behaviour.json";
 const LOG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/resolve");
 const AGENT_BIN: &str = "cursor-agent";
 const AGENT_MODEL: &str = "claude-opus-5-5-medium";
+const TOOL_DETAILS: [&str; 6] = ["command", "path", "pattern", "globPattern", "query", "url"];
 
 #[derive(Serialize)]
 pub struct Tab {
@@ -35,6 +38,23 @@ pub struct ResolveRequest {
 #[derive(Serialize)]
 pub struct ResolveStart {
     chat: String,
+}
+
+#[derive(Deserialize)]
+pub struct ProgressRequest {
+    chat: String,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Progress {
+    status: &'static str,
+    steps: Vec<Step>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Step {
+    kind: &'static str,
+    text: String,
 }
 
 pub struct LoadError(String);
@@ -79,6 +99,15 @@ pub async fn resolve(Json(req): Json<ResolveRequest>) -> Result<Json<ResolveStar
     Ok(Json(ResolveStart { chat }))
 }
 
+pub async fn progress(Query(req): Query<ProgressRequest>) -> Result<Json<Progress>, ResolveError> {
+    if !valid_chat(&req.chat) {
+        return Err(ResolveError::BadItem("Bad chat id.".to_string()));
+    }
+    let path = Path::new(LOG_DIR).join(format!("{}.log", req.chat));
+    let log = fs::read_to_string(&path).map_err(|_| ResolveError::BadItem("The chat has no log.".to_string()))?;
+    Ok(Json(read_progress(&log)))
+}
+
 async fn start_agent(workspace: &Path, prompt: &str) -> Result<String, String> {
     let output = Command::new(AGENT_BIN)
         .arg("create-chat")
@@ -106,25 +135,34 @@ async fn start_agent(workspace: &Path, prompt: &str) -> Result<String, String> {
         .process_group(0)
         .spawn()
         .map_err(|e| format!("failed to start {AGENT_BIN}: {e}"))?;
+    // the exit line tells the page that an agent stopped without a result event
     tokio::spawn(async move {
-        let _ = child.wait().await;
+        let code = child.wait().await.ok().and_then(|status| status.code());
+        if let Ok(mut file) = fs::OpenOptions::new().append(true).open(&log_path) {
+            let _ = writeln!(file, "{}", json!({ "type": "exit", "code": code }));
+        }
     });
     Ok(chat)
 }
 
 fn chat_id(status_ok: bool, stdout: &str, stderr: &str) -> Result<String, String> {
     let chat = stdout.trim();
-    let valid = !chat.is_empty() && chat.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
-    if status_ok && valid {
+    if status_ok && valid_chat(chat) {
         return Ok(chat.to_string());
     }
     let detail = first_line(stderr).or_else(|| first_line(stdout)).unwrap_or("no chat id");
     Err(format!("failed to create the Cursor chat: {detail}"))
 }
 
+fn valid_chat(chat: &str) -> bool {
+    !chat.is_empty() && chat.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 fn agent_args(workspace: &Path, chat: &str, prompt: &str) -> Vec<String> {
     vec![
         "--print".to_string(),
+        "--output-format".to_string(),
+        "stream-json".to_string(),
         "--force".to_string(),
         "--trust".to_string(),
         "--model".to_string(),
@@ -139,6 +177,55 @@ fn agent_args(workspace: &Path, chat: &str, prompt: &str) -> Vec<String> {
 
 fn first_line(text: &str) -> Option<&str> {
     text.lines().map(str::trim).find(|line| !line.is_empty())
+}
+
+// a line that is not JSON is stderr text of the agent
+fn read_progress(log: &str) -> Progress {
+    let mut status = "running";
+    let mut steps = Vec::new();
+    for line in log.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            steps.push(Step { kind: "output", text: line.to_string() });
+            continue;
+        };
+        match (event["type"].as_str(), event["subtype"].as_str()) {
+            (Some("assistant"), _) => {
+                let text = message_text(&event);
+                if !text.is_empty() {
+                    steps.push(Step { kind: "message", text });
+                }
+            }
+            (Some("tool_call"), Some("started")) => steps.push(Step { kind: "tool", text: tool_text(&event["tool_call"]) }),
+            (Some("result"), _) if event["is_error"] == true => {
+                status = "failed";
+                if let Some(text) = event["result"].as_str() {
+                    steps.push(Step { kind: "output", text: text.to_string() });
+                }
+            }
+            (Some("result"), _) => status = "finished",
+            (Some("exit"), _) if status == "running" => status = "stopped",
+            _ => {}
+        }
+    }
+    Progress { status, steps }
+}
+
+fn message_text(event: &Value) -> String {
+    let blocks = event["message"]["content"].as_array().into_iter().flatten();
+    let texts: Vec<&str> = blocks.filter(|block| block["type"] == "text").filter_map(|block| block["text"].as_str()).collect();
+    texts.concat().trim().to_string()
+}
+
+fn tool_text(call: &Value) -> String {
+    let tool = call.as_object().and_then(|call| call.iter().find(|(key, _)| key.ends_with("ToolCall")));
+    let Some((key, tool)) = tool else {
+        return call["function"]["name"].as_str().unwrap_or("tool").to_string();
+    };
+    let name = key.trim_end_matches("ToolCall");
+    match TOOL_DETAILS.iter().find_map(|field| tool["args"][*field].as_str()) {
+        Some(detail) => format!("{name}: {detail}"),
+        None => name.to_string(),
+    }
 }
 
 fn load_tabs(projects_file: &Path, home: &str) -> Result<Vec<Tab>, String> {
@@ -345,6 +432,8 @@ mod tests {
         let args = agent_args(Path::new("/code/workspace"), "chat-1", "Resolve it.");
         let expected = [
             "--print",
+            "--output-format",
+            "stream-json",
             "--force",
             "--trust",
             "--model",
@@ -370,5 +459,45 @@ mod tests {
         assert_eq!(failed, "failed to create the Cursor chat: Not logged in.");
         assert!(chat_id(true, "", "").is_err());
         assert!(chat_id(true, "../chat 1", "").is_err());
+    }
+
+    fn step(kind: &'static str, text: &str) -> Step {
+        Step { kind, text: text.to_string() }
+    }
+
+    #[test]
+    fn read_progress_gives_the_messages_and_the_started_tools() {
+        let log = [
+            r#"{"type":"system","subtype":"init"}"#,
+            r#"{"type":"user","message":{"content":[{"type":"text","text":"Resolve it."}]}}"#,
+            r#"{"type":"tool_call","subtype":"started","tool_call":{"readToolCall":{"args":{"path":"/code/a.md"}}}}"#,
+            r#"{"type":"tool_call","subtype":"completed","tool_call":{"readToolCall":{"args":{"path":"/code/a.md"},"result":{}}}}"#,
+            r#"{"type":"tool_call","subtype":"started","tool_call":{"todoToolCall":{"args":{}}}}"#,
+            r#"{"type":"tool_call","subtype":"started","tool_call":{"function":{"name":"mcp_search"}}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Item #3 "},{"type":"text","text":"is resolved."}]}}"#,
+        ]
+        .join("\n");
+        let progress = read_progress(&log);
+        assert_eq!(progress.status, "running");
+        assert_eq!(
+            progress.steps,
+            [step("tool", "read: /code/a.md"), step("tool", "todo"), step("tool", "mcp_search"), step("message", "Item #3 is resolved.")]
+        );
+    }
+
+    #[test]
+    fn read_progress_gives_the_status_of_the_end() {
+        assert_eq!(read_progress(r#"{"type":"result","is_error":false,"result":"Done."}"#).status, "finished");
+        assert_eq!(read_progress("{\"type\":\"result\",\"is_error\":false}\n{\"type\":\"exit\",\"code\":0}").status, "finished");
+        assert_eq!(read_progress(r#"{"type":"exit","code":null}"#).status, "stopped");
+
+        let failed = read_progress(r#"{"type":"result","is_error":true,"result":"Model error."}"#);
+        assert_eq!(failed, Progress { status: "failed", steps: vec![step("output", "Model error.")] });
+    }
+
+    #[test]
+    fn read_progress_keeps_a_line_that_is_not_json() {
+        let progress = read_progress("Error: not logged in\n\n{\"type\":\"exit\",\"code\":1}");
+        assert_eq!(progress, Progress { status: "stopped", steps: vec![step("output", "Error: not logged in")] });
     }
 }

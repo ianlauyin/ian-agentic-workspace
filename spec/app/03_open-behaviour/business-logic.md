@@ -44,7 +44,13 @@ Each item is one card. The card has these parts, in this order:
 - The agent runs without a person. It can edit files and run commands without approval.
 - The agent continues when the page closes or the server restarts.
 - After the start, the button shows "Started" and stays disabled. The card shows the chat id of the agent and the `cursor-agent --resume` command that opens the chat. A reload keeps this state.
-- The page does not show when the agent stops. After the agent deletes the item from the file, the item is not on the page after a reload.
+- The agent is a background Cursor CLI agent. Cursor Desktop does not show it.
+- Under the chat id, the card shows the progress of the agent: the status, each tool that the agent starts, and each message of the agent. The page loads the progress each 3 seconds while the agent works.
+- The status is one of these: the agent is working, the agent finished, the agent failed, or the agent stopped before it finished. When the status is not "working", the page does not load the progress again.
+- An error text of the agent shows as a step of the progress.
+- If the progress cannot be loaded, the card shows the error. A reload tries again.
+- If the server restarts while the agent works, the page cannot know when the agent stops without a result. The status then stays "working".
+- After the agent deletes the item from the file, the item is not on the page after a reload.
 - If the start fails, the page shows the error, and the user can click Resolve again.
 - The server starts an agent only for an item that is in `spec/open-behaviour.json` of a project in `conf/projects.json`. A different item returns 400.
 
@@ -57,6 +63,7 @@ Each item is one card. The card has these parts, in this order:
 - Each successful resolve writes all started resolves with `PUT /page`, as `open-behaviour-resolves`.
 - The key of a resolve is the same as the key of a decision. The data is `{"<key>": "<chat id>"}`.
 - When the page opens, it loads `open-behaviour-resolves` with `GET /page`.
+- The page loads the progress of a started resolve with `GET /open-behaviour-progress`. The progress is not in the DB.
 - A resolve is saved only after the start is successful. The page does not save the value `starting`.
 - If a save of the resolves fails, the page shows the error and keeps the last saved resolves.
 - If the file of a project cannot be read or parsed, the tab of that project shows the error. The other tabs still show their items.

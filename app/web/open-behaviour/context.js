@@ -1,5 +1,6 @@
 const DECISIONS_PAGE = "open-behaviour-decisions";
 const RESOLVES_PAGE = "open-behaviour-resolves";
+const ENDED = ["finished", "failed", "stopped", "error"];
 
 export function decisionKey(tab, group, item) {
   return `${tab.id}/${group.spec}/${item.id}`;
@@ -37,7 +38,8 @@ function savedResolves(resolves) {
 // onChange runs after each change of the state, so the page can render again
 export function createOpenBehaviour(api, onChange = () => {}) {
   // resolves maps a decision key to "starting" or to the Cursor chat id
-  const state = { tabs: [], decisions: {}, resolves: {}, loaded: false, error: "" };
+  const state = { tabs: [], decisions: {}, resolves: {}, progress: {}, loaded: false, error: "" };
+  let refreshing = false;
 
   async function load() {
     try {
@@ -106,5 +108,26 @@ export function createOpenBehaviour(api, onChange = () => {}) {
     onChange();
   }
 
-  return { state, load, decide, resolve };
+  // an ended agent writes no more steps, so its progress is not loaded again
+  async function refreshProgress() {
+    const running = Object.entries(state.resolves).filter(
+      ([key, chat]) => chat !== "starting" && !ENDED.includes(state.progress[key]?.status),
+    );
+    if (refreshing || running.length === 0) return;
+    refreshing = true;
+    const loaded = await Promise.all(
+      running.map(async ([key, chat]) => {
+        try {
+          return [key, await api.loadResolveProgress(chat)];
+        } catch (e) {
+          return [key, { status: "error", steps: [], error: e.message }];
+        }
+      }),
+    );
+    refreshing = false;
+    state.progress = { ...state.progress, ...Object.fromEntries(loaded) };
+    onChange();
+  }
+
+  return { state, load, decide, resolve, refreshProgress };
 }
