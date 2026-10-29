@@ -24,17 +24,16 @@ Each spec has two files:
 
 ## Open behaviour
 
-An open item is a known behaviour that is not resolved. Each package with open items has one `spec/<package>/open-behaviour.json` file, in the same folder as `spec/<package>/00_context.md`. A spec folder does not have its own file for open items. Before you change a behaviour, read the open items of its spec.
+An open item is a known behaviour that is not resolved. The repo has one file for open items: `spec/open-behaviour.json`. A package or a spec folder does not have its own file for open items. Before you change a behaviour, read the open items of its spec.
 
-- To add the file for a package, copy `spec/open-behaviour.json` to `spec/<package>/open-behaviour.json`.
 - The file has only the JSON data: a list of entries. Do not add an HTML page or other text to the file.
-- Write one entry for each spec folder that has open items, in folder order. Each entry has `spec`, `title`, `context` and `items`.
+- Write one entry for each spec folder that has open items, in package order, then in folder order. Each entry has `spec`, `title`, `context` and `items`.
 
 Each entry has these fields:
 
 | Field     | Contents                                                                              |
 | --------- | ------------------------------------------------------------------------------------- |
-| `spec`    | The spec folder name under `spec/<package>/`.                                         |
+| `spec`    | The spec folder path under `spec/`, as `<package>/NN_name`.                           |
 | `title`   | The title of the spec.                                                                |
 | `context` | The repo, the commit and the date of the last check, and the path conventions.        |
 | `items`   | The open items of the spec.                                                           |
@@ -51,14 +50,14 @@ Each item has these fields:
 | `kind`      | `bug`, `decision` or `cleanup`.                                                |
 | `scope`     | The packages and services that the item has an effect on.                      |
 | `options`   | Three ways to resolve the item. Put the recommended way first.                 |
-| `note`      | Optional. A reference to a copy of the item in a different package, or a date. |
+| `note`      | Optional. A reference to a copy of the item in a different spec, or a date.    |
 
-- Put an item in the file of the package where the user sees the behaviour.
-- If an item occurs in two or more apps, put a copy in the file of each app. In `note`, give the location of each other copy.
-- `business-logic.md` and `code-impl.md` refer to their items as `` `spec/<package>/open-behaviour.json` (`NN_name`) ``.
+- Put an item in the entry of the spec where the user sees the behaviour.
+- If an item occurs in two or more apps, put a copy in the entry of the spec of each app. In `note`, give the `spec` and the `id` of each other copy.
+- `business-logic.md` and `code-impl.md` refer to their items as `` `spec/open-behaviour.json` (`<package>/NN_name`) ``.
 - To resolve an item, fix the code and the spec in the same change. Then delete the item.
 - If a spec entry has no items, delete the entry and its references in `business-logic.md` and `code-impl.md`.
-- If no spec in the package has items, delete `spec/<package>/open-behaviour.json`.
+- If no spec has items, keep `spec/open-behaviour.json` as an empty list.
 
 ## Specs
 
