@@ -69,6 +69,9 @@ export function mount(main, api) {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = tab.name;
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      button.append(badge);
       button.addEventListener("click", () => {
         selected = tab.id;
         render();
@@ -103,7 +106,7 @@ export function mount(main, api) {
         panel.append(empty);
       }
       page.append(panel);
-      panels.set(tab.id, { button, panel, slots });
+      panels.set(tab.id, { button, badge, panel, slots });
     }
     built = true;
   }
@@ -223,6 +226,9 @@ export function mount(main, api) {
       placeCards(tab);
       panel.panel.hidden = tab.id !== selected;
       panel.button.classList.toggle("on", tab.id === selected);
+      const open = groupsByStatus(tab, decisions).open.reduce((sum, group) => sum + group.items.length, 0);
+      panel.badge.textContent = open;
+      panel.badge.hidden = open === 0;
     }
     const tab = tabs.find((item) => item.id === selected);
     const total = tab ? tab.groups.reduce((sum, group) => sum + group.items.length, 0) : 0;

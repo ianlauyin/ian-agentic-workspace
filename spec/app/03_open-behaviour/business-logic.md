@@ -3,6 +3,7 @@
 ## Items
 
 - The page shows one tab for each project in `conf/projects.json`, in the order of that file. The tab name is the project name. The user cannot change the tab name.
+- Each tab shows a badge with the number of open items of that project. The badge changes after each save of a final decision. A tab with no open item shows no badge.
 - The items of a tab come from the open-behaviour files of that project: `spec/open-behaviour.json` first, then each `spec/<package>/open-behaviour.json` in package name order. The file rules are in `template/spec/structure.md`.
 - The page reads the files each time it opens. Thus, a change to a file shows after a reload.
 - The page shows the items of all kinds.
