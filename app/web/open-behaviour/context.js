@@ -1,8 +1,9 @@
-const ITEMS_NAME = "product-decision-items";
-const PAGE_NAME = "product-decisions";
+const PAGE_NAME = "open-behaviour-decisions";
 
+// a spec folder name is unique only in its package, so the key has the package
 export function decisionKey(tab, group, item) {
-  return `${tab.id}/${group.spec}/${item.id}`;
+  const spec = group.package ? `${group.package}/${group.spec}` : group.spec;
+  return `${tab.id}/${spec}/${item.id}`;
 }
 
 export function groupsByStatus(tab, decisions) {
@@ -22,33 +23,18 @@ export function groupsByStatus(tab, decisions) {
 }
 
 // onChange runs after each change of the state, so the page can render again
-export function createProductDecision(api, onChange = () => {}) {
+export function createOpenBehaviour(api, onChange = () => {}) {
   const state = { tabs: [], decisions: {}, loaded: false, error: "" };
 
   async function load() {
     try {
-      const [tabs, data] = await Promise.all([api.loadPage(ITEMS_NAME), api.loadPage(PAGE_NAME)]);
-      state.tabs = tabs ?? [];
+      const [tabs, data] = await Promise.all([api.loadOpenBehaviour(), api.loadPage(PAGE_NAME)]);
+      state.tabs = tabs;
       state.decisions = data ?? {};
       state.loaded = true;
       state.error = "";
     } catch (e) {
-      state.error = `Failed to load the product decisions: ${e.message}`;
-    }
-    onChange();
-  }
-
-  async function rename(id, name) {
-    const trimmed = name.trim();
-    const tab = state.tabs.find((item) => item.id === id);
-    if (!tab || !trimmed || trimmed === tab.name) return;
-    const next = state.tabs.map((item) => (item.id === id ? { ...item, name: trimmed } : item));
-    try {
-      await api.savePage(ITEMS_NAME, next);
-      state.tabs = next;
-      state.error = "";
-    } catch (e) {
-      state.error = `Failed to save: ${e.message}`;
+      state.error = `Failed to load the open behaviour: ${e.message}`;
     }
     onChange();
   }
@@ -68,5 +54,5 @@ export function createProductDecision(api, onChange = () => {}) {
     onChange();
   }
 
-  return { state, load, decide, rename };
+  return { state, load, decide };
 }

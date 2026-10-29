@@ -1,4 +1,5 @@
 mod db;
+mod open_behaviour;
 mod page;
 
 use std::sync::Arc;
@@ -16,7 +17,7 @@ const ADDR: &str = "127.0.0.1:47322";
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
 const WEB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/web");
 // the browser routes these paths, so each one returns index.html
-const PAGE_PATHS: [&str; 3] = ["/", "/todo", "/product-decision"];
+const PAGE_PATHS: [&str; 3] = ["/", "/todo", "/open-behaviour"];
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
@@ -29,7 +30,9 @@ async fn main() -> Result<(), String> {
 
 fn app(db: Arc<Db>, web_dir: &str) -> Router {
     let index = ServeFile::new(format!("{web_dir}/index.html"));
-    let mut router = Router::new().route("/page", get(page::load).put(page::save));
+    let mut router = Router::new()
+        .route("/page", get(page::load).put(page::save))
+        .route("/open-behaviour-items", get(open_behaviour::load));
     for path in PAGE_PATHS {
         router = router.route(path, get_service(index.clone()));
     }

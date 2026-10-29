@@ -1,4 +1,4 @@
-.product-decision-page {
+.open-behaviour-page {
   > .stats {
     color: var(--muted);
     margin: 0;
@@ -10,7 +10,7 @@
     white-space: pre-wrap;
   }
 
-  > .product-decision-page-tabs {
+  > .open-behaviour-page-tabs {
     display: flex;
     gap: 4px;
     overflow-x: auto;
@@ -39,23 +39,26 @@
     }
   }
 
-  .product-decision-page-name {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
-    margin: 16px 0;
+  .open-behaviour-page-panel {
+    margin-top: 16px;
 
-    > label {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
+    > .error {
+      color: var(--bad);
+    }
+
+    > .empty {
       color: var(--muted);
-      font-size: 12px;
     }
   }
 
-  .product-decision-page-group {
+  code {
+    font-size: 0.9em;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 0 3px;
+  }
+
+  .open-behaviour-page-group {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -76,7 +79,7 @@
     }
   }
 
-  .product-decision-page-card {
+  .open-behaviour-page-card {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -110,6 +113,18 @@
         font-size: 16px;
       }
 
+      > .kind {
+        font-size: 12px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 6px;
+
+        &.bug {
+          color: var(--bad);
+          border-color: var(--bad);
+        }
+      }
+
       > .status {
         color: var(--muted);
         font-size: 12px;
@@ -137,7 +152,14 @@
         overflow-wrap: anywhere;
       }
 
-      .scope {
+      .note {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .scope,
+      .waiting-on {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
@@ -188,7 +210,7 @@
   }
 
   @media (max-width: 560px) {
-    .product-decision-page-card > .fields {
+    .open-behaviour-page-card > .fields {
       grid-template-columns: 1fr;
     }
   }

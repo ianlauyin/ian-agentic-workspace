@@ -20,4 +20,4 @@ The app is a local server for the user. It is modeled on the ub-command-center a
 
 - `spec/app/01_server/` gives the server, the routes, the page shell, and the DB.
 - `spec/app/02_todo/` gives the `/todo` page.
-- `spec/app/03_product-decision/` gives the `/product-decision` page.
+- `spec/app/03_open-behaviour/` gives the `/open-behaviour` page.

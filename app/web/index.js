@@ -1,6 +1,6 @@
 const PAGES = [
   { path: "/todo", title: "TODO", module: "/todo/index.js" },
-  { path: "/product-decision", title: "Product Decision", module: "/product-decision/index.js" },
+  { path: "/open-behaviour", title: "Open Behaviour", module: "/open-behaviour/index.js" },
 ];
 const HOME = "/todo";
 
@@ -12,6 +12,7 @@ async function request(path, init) {
 }
 
 const api = {
+  loadOpenBehaviour: () => request("/open-behaviour-items"),
   loadPage: (name) => request(`/page?${new URLSearchParams({ name })}`),
   savePage: (name, data) =>
     request("/page", {
