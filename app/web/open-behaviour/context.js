@@ -1,4 +1,5 @@
-const PAGE_NAME = "open-behaviour-decisions";
+const DECISIONS_PAGE = "open-behaviour-decisions";
+const RESOLVES_PAGE = "open-behaviour-resolves";
 
 export function decisionKey(tab, group, item) {
   return `${tab.id}/${group.spec}/${item.id}`;
@@ -28,6 +29,11 @@ export function groupsByStatus(tab, decisions) {
   return { open, decided };
 }
 
+// the in-progress value is not a started terminal, so a reload can start the item again
+function savedResolves(resolves) {
+  return Object.fromEntries(Object.entries(resolves).filter(([, value]) => value && value !== "starting"));
+}
+
 // onChange runs after each change of the state, so the page can render again
 export function createOpenBehaviour(api, onChange = () => {}) {
   // resolves maps a decision key to "starting" or to the Orca terminal handle
@@ -35,9 +41,14 @@ export function createOpenBehaviour(api, onChange = () => {}) {
 
   async function load() {
     try {
-      const [tabs, data] = await Promise.all([api.loadOpenBehaviour(), api.loadPage(PAGE_NAME)]);
+      const [tabs, decisions, resolves] = await Promise.all([
+        api.loadOpenBehaviour(),
+        api.loadPage(DECISIONS_PAGE),
+        api.loadPage(RESOLVES_PAGE),
+      ]);
       state.tabs = tabs;
-      state.decisions = data ?? {};
+      state.decisions = decisions ?? {};
+      state.resolves = resolves ?? {};
       state.loaded = true;
       state.error = "";
     } catch (e) {
@@ -52,7 +63,7 @@ export function createOpenBehaviour(api, onChange = () => {}) {
     const { [key]: _, ...rest } = state.decisions;
     const next = trimmed ? { ...rest, [key]: trimmed } : rest;
     try {
-      await api.savePage(PAGE_NAME, next);
+      await api.savePage(DECISIONS_PAGE, next);
       state.decisions = next;
       state.error = "";
     } catch (e) {
@@ -67,19 +78,30 @@ export function createOpenBehaviour(api, onChange = () => {}) {
     if (!decision || state.resolves[key]) return;
     state.resolves = { ...state.resolves, [key]: "starting" };
     onChange();
+    let terminal;
     try {
-      const { terminal } = await api.resolveOpenBehaviour({
+      ({ terminal } = await api.resolveOpenBehaviour({
         tab: tab.id,
         spec: group.spec,
         id: item.id,
         decision,
-      });
-      state.resolves = { ...state.resolves, [key]: terminal };
-      state.error = "";
+      }));
     } catch (e) {
       const { [key]: _, ...rest } = state.resolves;
       state.resolves = rest;
       state.error = `Failed to start the resolve: ${e.message}`;
+      onChange();
+      return;
+    }
+    const next = { ...state.resolves, [key]: terminal };
+    try {
+      await api.savePage(RESOLVES_PAGE, savedResolves(next));
+      state.resolves = next;
+      state.error = "";
+    } catch (e) {
+      const { [key]: _, ...rest } = state.resolves;
+      state.resolves = rest;
+      state.error = `Failed to save: ${e.message}`;
     }
     onChange();
   }

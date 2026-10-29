@@ -23,7 +23,7 @@
 | --- | --- |
 | `GET /` | Shows `/todo`. |
 | `GET /todo` | Shows the TODOs of the user. Refer to `spec/app/02_todo/business-logic.md`. |
-| `GET /open-behaviour` | Shows the open behaviour of each project, and the final decisions of the user. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
+| `GET /open-behaviour` | Shows the open behaviour of each project, the final decisions of the user, and the started resolves. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
 
 ## Routes
 
