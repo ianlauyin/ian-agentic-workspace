@@ -10,11 +10,60 @@
     white-space: pre-wrap;
   }
 
+  > .product-decision-page-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    margin: 8px 0 0;
+    border-bottom: 1px solid var(--line);
+
+    > button {
+      font: inherit;
+      padding: 8px 14px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      white-space: nowrap;
+
+      &:hover {
+        color: var(--text);
+      }
+
+      &.on {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
+    }
+  }
+
+  .product-decision-page-name {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    margin: 16px 0;
+
+    > label {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+  }
+
   .product-decision-page-group {
     display: flex;
     flex-direction: column;
     gap: 12px;
     margin-bottom: 32px;
+
+    &[hidden] {
+      display: none;
+    }
 
     > h2 {
       margin-bottom: 0;

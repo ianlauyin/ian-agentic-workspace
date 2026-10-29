@@ -30,6 +30,5 @@
 | --- | --- |
 | `GET /page` | Returns the saved JSON of a page by `name`. If there is no save, returns `null`. |
 | `PUT /page` | Saves the JSON `data` of a page by `name`, and replaces the last save. Returns `null`. |
-| `GET /decisions` | Returns `conf/decisions.json`, the items of the `/product-decision` page. |
 
 - A page name has only letters, digits, and `-`. Other names return 400.

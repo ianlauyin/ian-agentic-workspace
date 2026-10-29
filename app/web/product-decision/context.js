@@ -1,22 +1,54 @@
+const ITEMS_NAME = "product-decision-items";
 const PAGE_NAME = "product-decisions";
 
-export function decisionKey(group, item) {
-  return `${group.project}/${group.spec}/${item.id}`;
+export function decisionKey(tab, group, item) {
+  return `${tab.id}/${group.spec}/${item.id}`;
+}
+
+export function groupsByStatus(tab, decisions) {
+  const open = [];
+  const decided = [];
+  for (const group of tab.groups) {
+    const openItems = [];
+    const decidedItems = [];
+    for (const item of group.items) {
+      if (decisions[decisionKey(tab, group, item)]) decidedItems.push(item);
+      else openItems.push(item);
+    }
+    if (openItems.length > 0) open.push({ ...group, items: openItems });
+    if (decidedItems.length > 0) decided.push({ ...group, items: decidedItems });
+  }
+  return { open, decided };
 }
 
 // onChange runs after each change of the state, so the page can render again
-export function createProductDecision(api, loadGroups, onChange = () => {}) {
-  const state = { groups: [], decisions: {}, loaded: false, error: "" };
+export function createProductDecision(api, onChange = () => {}) {
+  const state = { tabs: [], decisions: {}, loaded: false, error: "" };
 
   async function load() {
     try {
-      const [groups, data] = await Promise.all([loadGroups(), api.loadPage(PAGE_NAME)]);
-      state.groups = groups;
+      const [tabs, data] = await Promise.all([api.loadPage(ITEMS_NAME), api.loadPage(PAGE_NAME)]);
+      state.tabs = tabs ?? [];
       state.decisions = data ?? {};
       state.loaded = true;
       state.error = "";
     } catch (e) {
       state.error = `Failed to load the product decisions: ${e.message}`;
+    }
+    onChange();
+  }
+
+  async function rename(id, name) {
+    const trimmed = name.trim();
+    const tab = state.tabs.find((item) => item.id === id);
+    if (!tab || !trimmed || trimmed === tab.name) return;
+    const next = state.tabs.map((item) => (item.id === id ? { ...item, name: trimmed } : item));
+    try {
+      await api.savePage(ITEMS_NAME, next);
+      state.tabs = next;
+      state.error = "";
+    } catch (e) {
+      state.error = `Failed to save: ${e.message}`;
     }
     onChange();
   }
@@ -36,5 +68,5 @@ export function createProductDecision(api, loadGroups, onChange = () => {}) {
     onChange();
   }
 
-  return { state, load, decide };
+  return { state, load, decide, rename };
 }

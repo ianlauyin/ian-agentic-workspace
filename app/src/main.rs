@@ -15,7 +15,6 @@ use crate::db::Db;
 const ADDR: &str = "127.0.0.1:47322";
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
 const WEB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/web");
-const CONF_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../conf");
 // the browser routes these paths, so each one returns index.html
 const PAGE_PATHS: [&str; 3] = ["/", "/todo", "/product-decision"];
 
@@ -25,14 +24,12 @@ async fn main() -> Result<(), String> {
     let db = Db::open(&format!("{DATA_DIR}/app.db"))?;
     let listener = tokio::net::TcpListener::bind(ADDR).await.map_err(|e| format!("failed to bind {ADDR}: {e}"))?;
     println!("listening on http://{ADDR}");
-    axum::serve(listener, app(Arc::new(db), WEB_DIR, CONF_DIR)).await.map_err(|e| format!("server failed: {e}"))
+    axum::serve(listener, app(Arc::new(db), WEB_DIR)).await.map_err(|e| format!("server failed: {e}"))
 }
 
-fn app(db: Arc<Db>, web_dir: &str, conf_dir: &str) -> Router {
+fn app(db: Arc<Db>, web_dir: &str) -> Router {
     let index = ServeFile::new(format!("{web_dir}/index.html"));
-    let mut router = Router::new()
-        .route("/page", get(page::load).put(page::save))
-        .route("/decisions", get_service(ServeFile::new(format!("{conf_dir}/decisions.json"))));
+    let mut router = Router::new().route("/page", get(page::load).put(page::save));
     for path in PAGE_PATHS {
         router = router.route(path, get_service(index.clone()));
     }
@@ -72,9 +69,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("index.html"), "<!doctype html>").unwrap();
         std::fs::write(dir.join("app.js"), "export {}").unwrap();
-        std::fs::write(dir.join("decisions.json"), "[]").unwrap();
         let dir = dir.to_str().unwrap();
-        app(Arc::new(Db::open(":memory:").unwrap()), dir, dir)
+        app(Arc::new(Db::open(":memory:").unwrap()), dir)
     }
 
     async fn send(app: &Router, req: Request<Body>) -> (StatusCode, String) {
@@ -111,12 +107,6 @@ mod tests {
         let (status, body) = send(&app, get("/missing.js")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert!(error_of(&body).is_string());
-    }
-
-    #[tokio::test]
-    async fn decisions_returns_conf_file() {
-        let app = test_app("decisions");
-        assert_eq!(send(&app, get("/decisions")).await, (StatusCode::OK, "[]".to_string()));
     }
 
     #[tokio::test]
