@@ -40,7 +40,6 @@ If the user tells you an error or a preference, update the applicable file in th
 
 | File | When to read |
 | --- | --- |
-| `skills/call-subagent.md` | Before you read or edit a different repo |
 | `skills/fetch-logs.md` | Before you get the log events of a project |
 
 ## App
