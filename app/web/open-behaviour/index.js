@@ -277,7 +277,7 @@ export function mount(main, api) {
     resolveButton.disabled = edited || resolve !== "";
     resolveButton.textContent = resolve === "" ? "Resolve" : resolve === "starting" ? "Starting…" : "Started";
     resolveChat.hidden = resolve === "" || resolve === "starting";
-    resolveChat.textContent = `The agent resolves this item in Cursor chat ${resolve}. Run "cursor-agent --resume ${resolve}" to open it.`;
+    resolveChat.textContent = `The agent ${resolve} is in the Cursor sidebar. Open https://cursor.com/agents/${resolve}. If the sidebar hides it, turn on Filter, Source, API.`;
     updateProgress(card, behaviour.state.progress[key]);
   }
 

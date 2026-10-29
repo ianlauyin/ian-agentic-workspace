@@ -40,17 +40,19 @@ Each item is one card. The card has these parts, in this order:
 
 - The Resolve button shows only on a card that has a saved final decision.
 - The Resolve button is disabled when the input text is not the same as the saved decision. Save the decision first.
-- Resolve starts one Cursor agent in the background, in this workspace, in a new Cursor chat. The model is Claude Opus 5.5 with medium effort. The agent resolves the item as the saved final decision tells, and then deletes the item from `spec/open-behaviour.json` of the project. It obeys `AGENTS.md`.
+- Resolve starts one Cursor cloud agent on the remote of this workspace. The model is Claude Opus 5.5 with medium effort. The server reads `CURSOR_API_KEY` from the process environment. When that value is empty, the server reads `.env` at the workspace root. An empty value is a start failure.
+- The cloud agent calls one subagent. The subagent name is `target-repo`. The subagent works on the remote of the project of the item. The cloud agent does not edit that project.
+- The remotes are the `origin` remote of this workspace and the `origin` remote of the project. The server sends each remote as an HTTPS URL. The start branch is the default branch of `origin`.
+- When the two remotes are the same URL, the server sends that remote one time.
+- The subagent resolves the item as the saved final decision tells. It obeys `AGENTS.md` in the target repository. It deletes the item from `spec/open-behaviour.json` on a new branch of the target remote. The page reads the local file, so the item stays on the page until that branch is in the local file.
 - The agent runs without a person. It can edit files and run commands without approval.
 - The agent continues when the page closes or the server restarts.
-- After the start, the button shows "Started" and stays disabled. The card shows the chat id of the agent and the `cursor-agent --resume` command that opens the chat. A reload keeps this state.
-- The agent is a background Cursor CLI agent. Cursor Desktop does not show it.
-- Under the chat id, the card shows the progress of the agent: the status, each tool that the agent starts, and each message of the agent. The page loads the progress each 3 seconds while the agent works.
+- After the start, the button shows "Started" and stays disabled. The card shows the cloud agent id and the agent URL. The agent is in the Cursor agents sidebar. The sidebar shows the agent when the source filter includes API. A reload keeps this state.
+- Under the agent id, the card shows the progress of the agent: the status, each tool that the agent starts, and each message of the agent. The page loads the progress each 3 seconds while the agent works.
 - The status is one of these: the agent is working, the agent finished, the agent failed, or the agent stopped before it finished. When the status is not "working", the page does not load the progress again.
 - An error text of the agent shows as a step of the progress.
 - If the progress cannot be loaded, the card shows the error. A reload tries again.
-- If the server restarts while the agent works, the page cannot know when the agent stops without a result. The status then stays "working".
-- After the agent deletes the item from the file, the item is not on the page after a reload.
+- When the log has no end, the progress route reads the cloud run. A run that has ended adds the end to the log. A failed read of the cloud run leaves the log as it is.
 - If the start fails, the page shows the error, and the user can click Resolve again.
 - The server starts an agent only for an item that is in `spec/open-behaviour.json` of a project in `conf/projects.json`. A different item returns 400.
 

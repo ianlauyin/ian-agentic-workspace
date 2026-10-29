@@ -1,7 +1,6 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 
 use axum::Json;
 use axum::extract::Query;
@@ -15,8 +14,11 @@ const WORKSPACE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 const PROJECTS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../conf/projects.json");
 const FILE_PATH: &str = "spec/open-behaviour.json";
 const LOG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/resolve");
-const AGENT_BIN: &str = "cursor-agent";
+const ENV_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.env");
+const API_AGENTS: &str = "https://api.cursor.com/v1/agents";
+const API_KEY_VAR: &str = "CURSOR_API_KEY";
 const AGENT_MODEL: &str = "claude-opus-5-5-medium";
+const SUBAGENT: &str = "target-repo";
 const TOOL_DETAILS: [&str; 6] = ["command", "path", "pattern", "globPattern", "query", "url"];
 
 #[derive(Serialize)]
@@ -93,9 +95,8 @@ pub async fn resolve(Json(req): Json<ResolveRequest>) -> Result<Json<ResolveStar
     }
     let projects = read_projects(Path::new(PROJECTS_FILE)).map_err(ResolveError::Failed)?;
     let (root, item) = find_item(&projects, &home, &req)?;
-    let prompt = resolve_prompt(&req, &root, &item, decision);
     let workspace = fs::canonicalize(WORKSPACE_DIR).map_err(|e| ResolveError::Failed(format!("failed to open the workspace: {e}")))?;
-    let chat = start_agent(&workspace, &prompt).await.map_err(ResolveError::Failed)?;
+    let chat = start_agent(&workspace, &root, &req, &item, decision).await.map_err(ResolveError::Failed)?;
     Ok(Json(ResolveStart { chat }))
 }
 
@@ -104,79 +105,348 @@ pub async fn progress(Query(req): Query<ProgressRequest>) -> Result<Json<Progres
         return Err(ResolveError::BadItem("Bad chat id.".to_string()));
     }
     let path = Path::new(LOG_DIR).join(format!("{}.log", req.chat));
-    let log = fs::read_to_string(&path).map_err(|_| ResolveError::BadItem("The chat has no log.".to_string()))?;
-    Ok(Json(read_progress(&log)))
+    if req.chat.starts_with("bc-") && !log_has_end(&read_log(&path)) && let Some(line) = cloud_end_line(&req.chat).await {
+        append_end(&path, &line).map_err(ResolveError::Failed)?;
+    }
+    if !path.is_file() {
+        return Err(ResolveError::BadItem("The chat has no log.".to_string()));
+    }
+    Ok(Json(read_progress(&read_log(&path))))
 }
 
-async fn start_agent(workspace: &Path, prompt: &str) -> Result<String, String> {
-    let output = Command::new(AGENT_BIN)
-        .arg("create-chat")
-        .current_dir(workspace)
-        .stdin(Stdio::null())
-        .output()
-        .await
-        .map_err(|e| format!("failed to start {AGENT_BIN}: {e}"))?;
-    let chat = chat_id(
-        output.status.success(),
-        &String::from_utf8_lossy(&output.stdout),
-        &String::from_utf8_lossy(&output.stderr),
-    )?;
+async fn start_agent(workspace: &Path, target: &Path, req: &ResolveRequest, item: &Value, decision: &str) -> Result<String, String> {
+    let key = api_key()?;
+    let workspace_repo = repo_remote(workspace).await?;
+    let target_repo = repo_remote(target).await?;
+    let body = create_body(req, item, decision, &workspace_repo, &target_repo);
+    let created = post_json(&http()?, &key, API_AGENTS, &body).await?;
+    let chat = created["agent"]["id"]
+        .as_str()
+        .filter(|id| valid_chat(id))
+        .ok_or_else(|| "failed to start the Cursor agent: no agent id".to_string())?;
+    let run = created["run"]["id"].as_str().unwrap_or("").to_string();
+    let chat = chat.to_string();
     fs::create_dir_all(LOG_DIR).map_err(|e| format!("failed to create {LOG_DIR}: {e}"))?;
     let log_path = Path::new(LOG_DIR).join(format!("{chat}.log"));
-    let log = fs::File::create(&log_path).map_err(|e| format!("failed to create {}: {e}", log_path.display()))?;
-    let err_log = log.try_clone().map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
-    let mut child = Command::new(AGENT_BIN)
-        .args(agent_args(workspace, &chat, prompt))
-        .current_dir(workspace)
-        .stdin(Stdio::null())
-        .stdout(log)
-        .stderr(err_log)
-        // A new process group keeps the agent alive when Ctrl+C stops the server.
-        .process_group(0)
-        .spawn()
-        .map_err(|e| format!("failed to start {AGENT_BIN}: {e}"))?;
-    // the exit line tells the page that an agent stopped without a result event
-    tokio::spawn(async move {
-        let code = child.wait().await.ok().and_then(|status| status.code());
-        if let Ok(mut file) = fs::OpenOptions::new().append(true).open(&log_path) {
-            let _ = writeln!(file, "{}", json!({ "type": "exit", "code": code }));
-        }
-    });
-    Ok(chat)
-}
-
-fn chat_id(status_ok: bool, stdout: &str, stderr: &str) -> Result<String, String> {
-    let chat = stdout.trim();
-    if status_ok && valid_chat(chat) {
-        return Ok(chat.to_string());
+    fs::File::create(&log_path).map_err(|e| format!("failed to create {}: {e}", log_path.display()))?;
+    if valid_chat(&run) {
+        let stream_chat = chat.clone();
+        let stream_key = key.clone();
+        tokio::spawn(async move {
+            if let Err(error) = stream_run(&stream_key, &stream_chat, &run, &log_path).await {
+                let error: String = safe_text(&stream_key, &error).chars().take(300).collect();
+                let _ = append_line(&log_path, &error);
+            }
+        });
     }
-    let detail = first_line(stderr).or_else(|| first_line(stdout)).unwrap_or("no chat id");
-    Err(format!("failed to create the Cursor chat: {detail}"))
+    Ok(chat)
 }
 
 fn valid_chat(chat: &str) -> bool {
     !chat.is_empty() && chat.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
-fn agent_args(workspace: &Path, chat: &str, prompt: &str) -> Vec<String> {
-    vec![
-        "--print".to_string(),
-        "--output-format".to_string(),
-        "stream-json".to_string(),
-        "--force".to_string(),
-        "--trust".to_string(),
-        "--model".to_string(),
-        AGENT_MODEL.to_string(),
-        "--workspace".to_string(),
-        workspace.display().to_string(),
-        "--resume".to_string(),
-        chat.to_string(),
-        prompt.to_string(),
-    ]
+fn create_body(req: &ResolveRequest, item: &Value, decision: &str, workspace: &(String, String), target: &(String, String)) -> Value {
+    let mut repos = vec![json!({ "url": workspace.0, "startingRef": workspace.1 })];
+    if target.0 != workspace.0 {
+        repos.push(json!({ "url": target.0, "startingRef": target.1 }));
+    }
+    let name: String = format!("Resolve {} {} #{}", req.tab, req.spec, req.id).chars().take(100).collect();
+    json!({
+        "name": name,
+        "prompt": { "text": resolve_prompt(req, item, decision, &workspace.0, &target.0) },
+        "model": { "id": AGENT_MODEL },
+        "repos": repos,
+        "autoCreatePR": false,
+        "customSubagents": [{
+            "name": SUBAGENT,
+            "description": "Edits the target repository. Always use for the code and spec change that resolves the open item.",
+            "prompt": subagent_prompt(&workspace.0, &target.0),
+            "model": "inherit"
+        }]
+    })
 }
 
-fn first_line(text: &str) -> Option<&str> {
-    text.lines().map(str::trim).find(|line| !line.is_empty())
+fn subagent_prompt(workspace_url: &str, target_url: &str) -> String {
+    format!(
+        "You edit only the target repository `{target_url}`.\n\
+         Do not edit the workspace repository `{workspace_url}`.\n\
+         Obey `AGENTS.md` in the target repository.\n\
+         Change the code and `{FILE_PATH}` in the same change.\n\
+         When an open item is resolved, delete that item from `{FILE_PATH}`."
+    )
+}
+
+async fn repo_remote(repo: &Path) -> Result<(String, String), String> {
+    let remote = git(repo, &["remote", "get-url", "origin"]).await?;
+    let url = https_repo_url(&remote)?;
+    let head = git(repo, &["rev-parse", "--abbrev-ref", "origin/HEAD"]).await?;
+    let branch = branch_name(&head);
+    if url.is_empty() || branch.is_empty() {
+        return Err(format!("failed to read the origin remote of {}", repo.display()));
+    }
+    Ok((url, branch))
+}
+
+async fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .await
+        .map_err(|e| format!("failed to read the origin remote of {}: {e}", repo.display()))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        let detail = detail.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("git failed");
+        return Err(format!("failed to read the origin remote of {}: {detail}", repo.display()));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn https_repo_url(remote: &str) -> Result<String, String> {
+    let remote = remote.trim().trim_end_matches('/').trim_end_matches(".git");
+    if let Some(rest) = remote.strip_prefix("git@") {
+        let Some((host, path)) = rest.split_once(':') else {
+            return Err(format!("failed to read the origin remote: {remote}"));
+        };
+        return Ok(format!("https://{host}/{path}"));
+    }
+    if let Some(rest) = remote.strip_prefix("ssh://git@") {
+        return Ok(format!("https://{rest}"));
+    }
+    if remote.starts_with("https://") || remote.starts_with("http://") {
+        return Ok(remote.to_string());
+    }
+    Err(format!("failed to read the origin remote: {remote}"))
+}
+
+fn branch_name(value: &str) -> String {
+    let value = value.trim();
+    value.strip_prefix("origin/").unwrap_or(value).to_string()
+}
+
+fn api_key() -> Result<String, String> {
+    if let Ok(value) = std::env::var(API_KEY_VAR) {
+        let value = value.trim().to_string();
+        if !value.is_empty() {
+            return Ok(value);
+        }
+    }
+    if let Ok(text) = fs::read_to_string(ENV_FILE)
+        && let Some(value) = env_file_value(&text, API_KEY_VAR)
+    {
+        return Ok(value);
+    }
+    Err(format!("{API_KEY_VAR} is not set."))
+}
+
+fn env_file_value(text: &str, name: &str) -> Option<String> {
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        let Some((key, value)) = line.split_once('=') else { continue };
+        if key.trim() != name {
+            continue;
+        }
+        let value = unquote(value.trim());
+        if !value.is_empty() {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn unquote(value: &str) -> String {
+    let bytes = value.as_bytes();
+    if bytes.len() >= 2 && (bytes[0] == b'"' || bytes[0] == b'\'') && bytes[0] == bytes[bytes.len() - 1] {
+        return value[1..value.len() - 1].to_string();
+    }
+    value.to_string()
+}
+
+fn http() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("failed to start the Cursor agent: {e}"))
+}
+
+async fn post_json(client: &reqwest::Client, key: &str, url: &str, body: &Value) -> Result<Value, String> {
+    let response = client
+        .post(url)
+        .bearer_auth(key)
+        .json(body)
+        .send()
+        .await
+        .map_err(|e| api_fail(key, &e.to_string()))?;
+    let status = response.status();
+    let text = response.text().await.map_err(|e| api_fail(key, &e.to_string()))?;
+    if !status.is_success() {
+        return Err(api_fail(key, &format!("{status} {}", api_message(&text))));
+    }
+    serde_json::from_str(&text).map_err(|_| "failed to start the Cursor agent: bad response".to_string())
+}
+
+async fn get_json(client: &reqwest::Client, key: &str, url: &str) -> Result<Value, String> {
+    let response = client.get(url).bearer_auth(key).send().await.map_err(|e| e.to_string())?;
+    let status = response.status();
+    let text = response.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(status.to_string());
+    }
+    serde_json::from_str(&text).map_err(|_| "bad response".to_string())
+}
+
+fn api_message(body: &str) -> String {
+    let Ok(value) = serde_json::from_str::<Value>(body) else {
+        return String::new();
+    };
+    let message = value["error"]["message"].as_str().or_else(|| value["message"].as_str()).unwrap_or("");
+    message.chars().take(300).collect()
+}
+
+fn api_fail(key: &str, detail: &str) -> String {
+    format!("failed to start the Cursor agent: {}", safe_text(key, detail))
+}
+
+fn safe_text(key: &str, text: &str) -> String {
+    if key.is_empty() { text.to_string() } else { text.replace(key, "***") }
+}
+
+async fn cloud_end_line(chat: &str) -> Option<String> {
+    let key = api_key().ok()?;
+    let client = http().ok()?;
+    let agent = get_json(&client, &key, &format!("{API_AGENTS}/{chat}")).await.ok()?;
+    let run_id = agent["latestRunId"].as_str()?;
+    if !valid_chat(run_id) {
+        return None;
+    }
+    let run = get_json(&client, &key, &format!("{API_AGENTS}/{chat}/runs/{run_id}")).await.ok()?;
+    end_line(run["status"].as_str().unwrap_or(""), run["result"].as_str().unwrap_or(""))
+}
+
+fn end_line(status: &str, text: &str) -> Option<String> {
+    let text = if status == "ERROR" && text.is_empty() { "The agent failed." } else { text };
+    match status {
+        "FINISHED" => Some(json!({ "type": "result", "is_error": false, "result": text }).to_string()),
+        "ERROR" => Some(json!({ "type": "result", "is_error": true, "result": text }).to_string()),
+        "CANCELLED" | "EXPIRED" => Some(json!({ "type": "exit", "code": null }).to_string()),
+        _ => None,
+    }
+}
+
+async fn stream_run(key: &str, chat: &str, run: &str, log_path: &Path) -> Result<(), String> {
+    let response = reqwest::Client::new()
+        .get(format!("{API_AGENTS}/{chat}/runs/{run}/stream"))
+        .bearer_auth(key)
+        .header("Accept", "text/event-stream")
+        .send()
+        .await
+        .map_err(|e| format!("failed to read the progress stream: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("failed to read the progress stream: {}", response.status()));
+    }
+    let mut response = response;
+    let mut pending = String::new();
+    let mut assistant = String::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| format!("failed to read the progress stream: {e}"))? {
+        pending.push_str(&String::from_utf8_lossy(&chunk));
+        pending = pending.replace("\r\n", "\n");
+        while let Some(at) = pending.find("\n\n") {
+            let block = pending[..at].to_string();
+            pending.drain(..at + 2);
+            apply_stream_block(&block, log_path, &mut assistant)?;
+        }
+    }
+    flush_assistant(log_path, &mut assistant)
+}
+
+fn apply_stream_block(block: &str, log_path: &Path, assistant: &mut String) -> Result<(), String> {
+    let (event, data) = sse_parts(block);
+    let Some(event) = event else { return Ok(()) };
+    let value: Value = serde_json::from_str(&data).unwrap_or(Value::Null);
+    match event {
+        "assistant" => {
+            if let Some(text) = value["text"].as_str() {
+                assistant.push_str(text);
+            }
+        }
+        "tool_call" if value["status"] == "running" => {
+            flush_assistant(log_path, assistant)?;
+            let text = cloud_tool_text(&value);
+            append_line(log_path, &json!({ "type": "tool_call", "subtype": "started", "tool_call": { "function": { "name": text } } }).to_string())?;
+        }
+        "result" => {
+            flush_assistant(log_path, assistant)?;
+            if let Some(line) = end_line(value["status"].as_str().unwrap_or(""), value["text"].as_str().unwrap_or("")) {
+                append_end(log_path, &line)?;
+            }
+        }
+        "error" => {
+            flush_assistant(log_path, assistant)?;
+            if let Some(message) = value["message"].as_str() {
+                append_line(log_path, message)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn sse_parts(block: &str) -> (Option<&str>, String) {
+    let mut event = None;
+    let mut data = String::new();
+    for line in block.lines() {
+        if let Some(rest) = line.strip_prefix("event:") {
+            event = Some(rest.trim());
+        } else if let Some(rest) = line.strip_prefix("data:") {
+            if !data.is_empty() {
+                data.push('\n');
+            }
+            data.push_str(rest.trim_start());
+        }
+    }
+    (event, data)
+}
+
+fn cloud_tool_text(data: &Value) -> String {
+    let name = data["name"].as_str().unwrap_or("tool");
+    match TOOL_DETAILS.iter().find_map(|field| data["args"][*field].as_str()) {
+        Some(detail) => format!("{name}: {detail}"),
+        None => name.to_string(),
+    }
+}
+
+fn flush_assistant(log_path: &Path, assistant: &mut String) -> Result<(), String> {
+    let text = assistant.trim().to_string();
+    assistant.clear();
+    if text.is_empty() {
+        return Ok(());
+    }
+    append_line(log_path, &json!({ "type": "assistant", "message": { "content": [{ "type": "text", "text": text }] } }).to_string())
+}
+
+fn read_log(path: &Path) -> String {
+    fs::read_to_string(path).unwrap_or_default()
+}
+
+fn log_has_end(log: &str) -> bool {
+    log.contains("\"type\":\"result\"") || log.contains("\"type\": \"result\"") || log.contains("\"type\":\"exit\"") || log.contains("\"type\": \"exit\"")
+}
+
+fn append_end(path: &Path, line: &str) -> Result<(), String> {
+    if log_has_end(&read_log(path)) {
+        return Ok(());
+    }
+    append_line(path, line)
+}
+
+fn append_line(path: &Path, line: &str) -> Result<(), String> {
+    let mut file = fs::OpenOptions::new().create(true).append(true).open(path).map_err(|e| format!("failed to open {}: {e}", path.display()))?;
+    writeln!(file, "{line}").map_err(|e| format!("failed to write {}: {e}", path.display()))
 }
 
 // a line that is not JSON is stderr text of the agent
@@ -260,21 +530,23 @@ fn find_item(projects: &Map<String, Value>, home: &str, req: &ResolveRequest) ->
     Ok((root, item.clone()))
 }
 
-fn resolve_prompt(req: &ResolveRequest, root: &Path, item: &Value, decision: &str) -> String {
+fn resolve_prompt(req: &ResolveRequest, item: &Value, decision: &str, workspace_url: &str, target_url: &str) -> String {
     let item = serde_json::to_string_pretty(item).unwrap_or_default();
     format!(
-        "Resolve one open-behaviour item of the project `{tab}`. The project is at `{root}`.\n\n\
+        "You are the agent for this workspace repository `{workspace_url}`.\n\
+         Call the `{SUBAGENT}` subagent to resolve one open-behaviour item in the target repository `{target_url}`.\n\
+         Do not edit the target repository yourself.\n\n\
          - File: `{FILE_PATH}`\n\
          - Spec: `{spec}`\n\
-         - Item: #{id}\n\n\
+         - Item: #{id}\n\
+         - Project: `{tab}`\n\n\
          The item:\n\n```json\n{item}\n```\n\n\
          The final decision of the user:\n\n{decision}\n\n\
-         Resolve the item as the final decision tells. When the item is resolved, delete it from `{FILE_PATH}`. \
-         Obey `AGENTS.md`.",
-        tab = req.tab,
-        root = root.display(),
+         The subagent resolves the item as the final decision tells. When the item is resolved, the subagent deletes it from `{FILE_PATH}`. \
+         The subagent obeys `AGENTS.md` in the target repository.",
         spec = req.spec,
         id = req.id,
+        tab = req.tab,
     )
 }
 
@@ -421,44 +693,89 @@ mod tests {
     #[test]
     fn resolve_prompt_has_the_item_and_the_decision() {
         let req = resolve_request("my-app", "web/01_login", 3);
-        let prompt = resolve_prompt(&req, Path::new("/code/my-app"), &json!({ "id": 3 }), "Use option 1.");
-        for part in ["`my-app`", "`/code/my-app`", "`spec/open-behaviour.json`", "`web/01_login`", "#3", "\"id\": 3", "Use option 1.", "AGENTS.md"] {
+        let prompt = resolve_prompt(&req, &json!({ "id": 3 }), "Use option 1.", "https://github.com/acme/workspace", "https://github.com/acme/my-app");
+        for part in [
+            "`my-app`",
+            "https://github.com/acme/workspace",
+            "https://github.com/acme/my-app",
+            "`spec/open-behaviour.json`",
+            "`web/01_login`",
+            "#3",
+            "\"id\": 3",
+            "Use option 1.",
+            "AGENTS.md",
+            "target-repo",
+            "Do not edit the target repository yourself.",
+        ] {
             assert!(prompt.contains(part), "{part}");
         }
     }
 
     #[test]
-    fn agent_args_run_cursor_without_approval_in_the_chat() {
-        let args = agent_args(Path::new("/code/workspace"), "chat-1", "Resolve it.");
-        let expected = [
-            "--print",
-            "--output-format",
-            "stream-json",
-            "--force",
-            "--trust",
-            "--model",
-            "claude-opus-5-5-medium",
-            "--workspace",
-            "/code/workspace",
-            "--resume",
-            "chat-1",
-            "Resolve it.",
-        ];
-        assert_eq!(args, expected.map(str::to_string).to_vec());
+    fn create_body_puts_this_repo_first_and_the_target_subagent() {
+        let req = resolve_request("my-app", "web/01_login", 3);
+        let body = create_body(
+            &req,
+            &json!({ "id": 3 }),
+            "Use option 1.",
+            &("https://github.com/acme/workspace".to_string(), "main".to_string()),
+            &("https://github.com/acme/my-app".to_string(), "main".to_string()),
+        );
+        assert_eq!(body["repos"][0]["url"], "https://github.com/acme/workspace");
+        assert_eq!(body["repos"][1]["url"], "https://github.com/acme/my-app");
+        assert_eq!(body["model"]["id"], AGENT_MODEL);
+        assert_eq!(body["autoCreatePR"], false);
+        assert_eq!(body["customSubagents"][0]["name"], "target-repo");
+        assert!(body["customSubagents"][0]["prompt"].as_str().unwrap().contains("https://github.com/acme/my-app"));
     }
 
     #[test]
-    fn chat_id_reads_the_created_chat() {
-        let chat = chat_id(true, "46798133-e840-455f-8bd1-0fe36eab3bfe\n", "").unwrap();
-        assert_eq!(chat, "46798133-e840-455f-8bd1-0fe36eab3bfe");
+    fn create_body_sends_one_repo_when_the_urls_match() {
+        let req = resolve_request("my-app", "web/01_login", 3);
+        let repo = ("https://github.com/acme/my-app".to_string(), "main".to_string());
+        let body = create_body(&req, &json!({ "id": 3 }), "Use option 1.", &repo, &repo);
+        assert_eq!(body["repos"].as_array().unwrap().len(), 1);
     }
 
     #[test]
-    fn chat_id_rejects_a_failure_or_a_bad_id() {
-        let failed = chat_id(false, "", "Not logged in.\nRun login.\n").unwrap_err();
-        assert_eq!(failed, "failed to create the Cursor chat: Not logged in.");
-        assert!(chat_id(true, "", "").is_err());
-        assert!(chat_id(true, "../chat 1", "").is_err());
+    fn https_repo_url_accepts_git_and_https_remotes() {
+        assert_eq!(https_repo_url("git@github.com:acme/my-app.git").unwrap(), "https://github.com/acme/my-app");
+        assert_eq!(https_repo_url("https://github.com/acme/my-app.git").unwrap(), "https://github.com/acme/my-app");
+        assert_eq!(https_repo_url("ssh://git@github.com/acme/my-app.git").unwrap(), "https://github.com/acme/my-app");
+        assert!(https_repo_url("acme/my-app").is_err());
+    }
+
+    #[test]
+    fn end_line_maps_the_cloud_run_status() {
+        assert!(end_line("RUNNING", "").is_none());
+        assert_eq!(end_line("FINISHED", "Done.").unwrap(), r#"{"type":"result","is_error":false,"result":"Done."}"#);
+        assert!(end_line("ERROR", "").unwrap().contains("The agent failed."));
+        assert_eq!(end_line("CANCELLED", "").unwrap(), r#"{"type":"exit","code":null}"#);
+    }
+
+    #[test]
+    fn env_file_value_reads_one_named_value() {
+        let text = "OTHER=secret\n# CURSOR_API_KEY=no\nexport CURSOR_API_KEY=\"cursor_test\"\n";
+        assert_eq!(env_file_value(text, "CURSOR_API_KEY").as_deref(), Some("cursor_test"));
+        assert_eq!(env_file_value("CURSOR_API_KEY=\n", "CURSOR_API_KEY"), None);
+    }
+
+    #[tokio::test]
+    async fn repo_remote_reads_origin() {
+        let dir = temp_home("remote");
+        git_ok(&dir, &["init", "-b", "main", "--template="]);
+        git_ok(&dir, &["remote", "add", "origin", "git@github.com:acme/my-app.git"]);
+        git_ok(&dir, &["-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "--allow-empty", "-m", "init"]);
+        git_ok(&dir, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        git_ok(&dir, &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+        let (url, branch) = repo_remote(&dir).await.unwrap();
+        assert_eq!(url, "https://github.com/acme/my-app");
+        assert_eq!(branch, "main");
+    }
+
+    fn git_ok(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git").args(args).current_dir(dir).status().unwrap();
+        assert!(status.success(), "{args:?}");
     }
 
     fn step(kind: &'static str, text: &str) -> Step {
