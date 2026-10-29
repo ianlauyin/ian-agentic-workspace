@@ -24,11 +24,20 @@ Each spec has two files:
 
 ## Open behaviour
 
-An open item is a known behaviour that is not resolved. Each package with open items has one `spec/<package>/open-behaviour.html` file, in the same folder as `spec/<package>/00_context.md`. A spec folder does not have its own file for open items. Before you change a behaviour, read the open items of its spec.
+An open item is a known behaviour that is not resolved. Each package with open items has one `spec/<package>/open-behaviour.json` file, in the same folder as `spec/<package>/00_context.md`. A spec folder does not have its own file for open items. Before you change a behaviour, read the open items of its spec.
 
-- To add the file for a package, copy `spec/open-behaviour.html` to `spec/<package>/open-behaviour.html`. Replace `{package}` and `{Package}` with the package path and name.
-- The data is the JSON in `<script id="open-behaviour">`. Edit only that block. The page shows the data. To read the items, open the file in a browser.
-- Write one entry for each spec folder that has open items, in folder order. Each entry has `spec`, `title`, `context` and `items`. `context` gives the repo, the commit and the date of the last check, and the path conventions.
+- To add the file for a package, copy `spec/open-behaviour.json` to `spec/<package>/open-behaviour.json`.
+- The file has only the JSON data: a list of entries. Do not add an HTML page or other text to the file.
+- Write one entry for each spec folder that has open items, in folder order. Each entry has `spec`, `title`, `context` and `items`.
+
+Each entry has these fields:
+
+| Field     | Contents                                                                              |
+| --------- | ------------------------------------------------------------------------------------- |
+| `spec`    | The spec folder name under `spec/<package>/`.                                         |
+| `title`   | The title of the spec.                                                                |
+| `context` | The repo, the commit and the date of the last check, and the path conventions.        |
+| `items`   | The open items of the spec.                                                           |
 
 Each item has these fields:
 
@@ -46,10 +55,10 @@ Each item has these fields:
 
 - Put an item in the file of the package where the user sees the behaviour.
 - If an item occurs in two or more apps, put a copy in the file of each app. In `note`, give the location of each other copy.
-- `business-logic.md` and `code-impl.md` refer to their items as `` `spec/<package>/open-behaviour.html` (`NN_name`) ``.
+- `business-logic.md` and `code-impl.md` refer to their items as `` `spec/<package>/open-behaviour.json` (`NN_name`) ``.
 - To resolve an item, fix the code and the spec in the same change. Then delete the item.
 - If a spec entry has no items, delete the entry and its references in `business-logic.md` and `code-impl.md`.
-- If no spec in the package has items, delete `spec/<package>/open-behaviour.html`.
+- If no spec in the package has items, delete `spec/<package>/open-behaviour.json`.
 
 ## Specs
 

@@ -8,7 +8,7 @@
 - An empty text does not change the tab name.
 - The first tab is selected when the page opens.
 - The page shows the groups of the selected tab.
-- The items of a tab come from the open behaviour of that project. For sales-tools, the source is the items of kind `decision` in `spec/site/open-behaviour.html` of the sales-tools repo.
+- The items of a tab come from the open behaviour of that project. For sales-tools, the source is the items of kind `decision` in `spec/site/open-behaviour.json` of the sales-tools repo.
 - The page shows the open items of the selected tab first. It groups those items by spec folder, in the order of the source.
 - The page shows the decided items of the selected tab at the bottom. It groups those items by spec folder, in the order of the source.
 - A group with no open item is not in the open part. A group with no decided item is not at the bottom.
