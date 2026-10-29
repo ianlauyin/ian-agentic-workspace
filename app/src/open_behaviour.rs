@@ -12,7 +12,8 @@ use tokio::process::Command;
 const WORKSPACE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 const PROJECTS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../conf/projects.json");
 const FILE_PATH: &str = "spec/open-behaviour.json";
-const ORCA_BIN: &str = "orca";
+const LOG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/resolve");
+const AGENT_BIN: &str = "cursor-agent";
 const AGENT_MODEL: &str = "claude-opus-5-5-medium";
 
 #[derive(Serialize)]
@@ -33,13 +34,7 @@ pub struct ResolveRequest {
 
 #[derive(Serialize)]
 pub struct ResolveStart {
-    terminal: String,
-}
-
-struct OrcaOutput {
-    status_ok: bool,
-    stdout: String,
-    stderr: String,
+    chat: String,
 }
 
 pub struct LoadError(String);
@@ -80,109 +75,66 @@ pub async fn resolve(Json(req): Json<ResolveRequest>) -> Result<Json<ResolveStar
     let (root, item) = find_item(&projects, &home, &req)?;
     let prompt = resolve_prompt(&req, &root, &item, decision);
     let workspace = fs::canonicalize(WORKSPACE_DIR).map_err(|e| ResolveError::Failed(format!("failed to open the workspace: {e}")))?;
-    let terminal = launch_terminal(&workspace, &prompt).await.map_err(ResolveError::Failed)?;
-    Ok(Json(ResolveStart { terminal }))
+    let chat = start_agent(&workspace, &prompt).await.map_err(ResolveError::Failed)?;
+    Ok(Json(ResolveStart { chat }))
 }
 
-fn launch_args(workspace: &Path, prompt: &str) -> Vec<String> {
-    vec![
-        "agent".to_string(),
-        "launch".to_string(),
-        "--agent".to_string(),
-        "cursor".to_string(),
-        "--surface".to_string(),
-        "terminal".to_string(),
-        "--model".to_string(),
-        AGENT_MODEL.to_string(),
-        "--worktree".to_string(),
-        format!("path:{}", workspace.display()),
-        "--prompt".to_string(),
-        prompt.to_string(),
-        "--json".to_string(),
-    ]
-}
-
-async fn launch_terminal(workspace: &Path, prompt: &str) -> Result<String, String> {
-    let args = launch_args(workspace, prompt);
-    let output = run_orca(&args, workspace).await?;
-    if !orca_not_running(&output) {
-        return terminal_handle(&output);
-    }
-    // A closed Orca reports runtime_unavailable. Open it once, then launch again.
-    let open = run_orca(&["open".to_string(), "--json".to_string()], workspace).await?;
-    if orca_not_running(&open) || !open.status_ok {
-        return Err(command_error("failed to open Orca", &open));
-    }
-    terminal_handle(&run_orca(&args, workspace).await?)
-}
-
-async fn run_orca(args: &[String], workspace: &Path) -> Result<OrcaOutput, String> {
-    let output = Command::new(ORCA_BIN)
-        .args(args)
+async fn start_agent(workspace: &Path, prompt: &str) -> Result<String, String> {
+    let output = Command::new(AGENT_BIN)
+        .arg("create-chat")
         .current_dir(workspace)
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
         .output()
         .await
-        .map_err(|e| format!("failed to start {ORCA_BIN}: {e}"))?;
-    Ok(OrcaOutput {
-        status_ok: output.status.success(),
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-    })
-}
-
-fn orca_not_running(output: &OrcaOutput) -> bool {
-    parse_orca(&output.stdout).is_some_and(|value| value["error"]["code"] == "runtime_unavailable")
-        || output.stdout.contains("Orca is not running")
-        || output.stderr.contains("Orca is not running")
-}
-
-fn terminal_handle(output: &OrcaOutput) -> Result<String, String> {
-    let Some(value) = parse_orca(&output.stdout) else {
-        return Err(command_error("failed to start the Orca terminal", output));
-    };
-    if value["ok"] != true {
-        return Err(format!("failed to start the Orca terminal: {}", failure_text(&value)));
-    }
-    let outcome = &value["result"]["outcome"];
-    if outcome["kind"] != "terminal" {
-        return Err("Orca did not start the agent in a terminal.".to_string());
-    }
-    let Some(handle) = outcome["handle"].as_str().filter(|handle| !handle.is_empty()) else {
-        return Err("Orca did not return a terminal.".to_string());
-    };
-    if value["result"]["prompt"]["outcome"] != "handed-to-terminal" {
-        return Err(format!("Orca started terminal {handle}, but the agent did not receive the decision."));
-    }
-    Ok(handle.to_string())
-}
-
-fn parse_orca(stdout: &str) -> Option<Value> {
-    serde_json::from_str(stdout.trim()).ok()
-}
-
-fn failure_text(value: &Value) -> String {
-    let message = value["error"]["message"].as_str().unwrap_or("").trim();
-    let code = value["error"]["code"].as_str().unwrap_or("");
-    let step = value["error"]["data"]["nextSteps"].as_array().and_then(|steps| {
-        steps.iter().find_map(|step| step.as_str().map(str::trim).filter(|step| !step.is_empty()))
+        .map_err(|e| format!("failed to start {AGENT_BIN}: {e}"))?;
+    let chat = chat_id(
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+    )?;
+    fs::create_dir_all(LOG_DIR).map_err(|e| format!("failed to create {LOG_DIR}: {e}"))?;
+    let log_path = Path::new(LOG_DIR).join(format!("{chat}.log"));
+    let log = fs::File::create(&log_path).map_err(|e| format!("failed to create {}: {e}", log_path.display()))?;
+    let err_log = log.try_clone().map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
+    let mut child = Command::new(AGENT_BIN)
+        .args(agent_args(workspace, &chat, prompt))
+        .current_dir(workspace)
+        .stdin(Stdio::null())
+        .stdout(log)
+        .stderr(err_log)
+        // A new process group keeps the agent alive when Ctrl+C stops the server.
+        .process_group(0)
+        .spawn()
+        .map_err(|e| format!("failed to start {AGENT_BIN}: {e}"))?;
+    tokio::spawn(async move {
+        let _ = child.wait().await;
     });
-    if !message.is_empty() && message != code {
-        return message.to_string();
-    }
-    step.map(str::to_string).unwrap_or_else(|| "Orca did not start the terminal.".to_string())
+    Ok(chat)
 }
 
-fn command_error(prefix: &str, output: &OrcaOutput) -> String {
-    if let Some(value) = parse_orca(&output.stdout) {
-        if value["ok"] != true {
-            return format!("{prefix}: {}", failure_text(&value));
-        }
+fn chat_id(status_ok: bool, stdout: &str, stderr: &str) -> Result<String, String> {
+    let chat = stdout.trim();
+    let valid = !chat.is_empty() && chat.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if status_ok && valid {
+        return Ok(chat.to_string());
     }
-    let detail = first_line(&output.stderr).or_else(|| first_line(&output.stdout)).unwrap_or("orca failed");
-    format!("{prefix}: {detail}")
+    let detail = first_line(stderr).or_else(|| first_line(stdout)).unwrap_or("no chat id");
+    Err(format!("failed to create the Cursor chat: {detail}"))
+}
+
+fn agent_args(workspace: &Path, chat: &str, prompt: &str) -> Vec<String> {
+    vec![
+        "--print".to_string(),
+        "--force".to_string(),
+        "--trust".to_string(),
+        "--model".to_string(),
+        AGENT_MODEL.to_string(),
+        "--workspace".to_string(),
+        workspace.display().to_string(),
+        "--resume".to_string(),
+        chat.to_string(),
+        prompt.to_string(),
+    ]
 }
 
 fn first_line(text: &str) -> Option<&str> {
@@ -388,88 +340,35 @@ mod tests {
         }
     }
 
-    fn orca_output(stdout: &str) -> OrcaOutput {
-        OrcaOutput { status_ok: true, stdout: stdout.to_string(), stderr: String::new() }
-    }
-
-    fn started(handle: &str) -> String {
-        json!({
-            "ok": true,
-            "result": {
-                "outcome": { "kind": "terminal", "handle": handle },
-                "prompt": { "delivery": "submit", "outcome": "handed-to-terminal" }
-            }
-        })
-        .to_string()
-    }
-
     #[test]
-    fn launch_args_start_cursor_in_a_new_terminal() {
-        let args = launch_args(Path::new("/code/workspace"), "Resolve it.");
+    fn agent_args_run_cursor_without_approval_in_the_chat() {
+        let args = agent_args(Path::new("/code/workspace"), "chat-1", "Resolve it.");
         let expected = [
-            "agent",
-            "launch",
-            "--agent",
-            "cursor",
-            "--surface",
-            "terminal",
+            "--print",
+            "--force",
+            "--trust",
             "--model",
             "claude-opus-5-5-medium",
-            "--worktree",
-            "path:/code/workspace",
-            "--prompt",
+            "--workspace",
+            "/code/workspace",
+            "--resume",
+            "chat-1",
             "Resolve it.",
-            "--json",
         ];
         assert_eq!(args, expected.map(str::to_string).to_vec());
     }
 
     #[test]
-    fn terminal_handle_reads_a_started_terminal() {
-        let handle = terminal_handle(&orca_output(&started("term_1"))).unwrap();
-        assert_eq!(handle, "term_1");
+    fn chat_id_reads_the_created_chat() {
+        let chat = chat_id(true, "46798133-e840-455f-8bd1-0fe36eab3bfe\n", "").unwrap();
+        assert_eq!(chat, "46798133-e840-455f-8bd1-0fe36eab3bfe");
     }
 
     #[test]
-    fn terminal_handle_rejects_a_chat_or_a_missed_prompt() {
-        let chat = json!({
-            "ok": true,
-            "result": {
-                "outcome": { "kind": "structured", "handle": "agent_1", "sessionId": "cursor_1" },
-                "prompt": { "outcome": "journaled", "messageId": "msg_1" }
-            }
-        });
-        assert_eq!(terminal_handle(&orca_output(&chat.to_string())).unwrap_err(), "Orca did not start the agent in a terminal.");
-        let missed = json!({
-            "ok": true,
-            "result": {
-                "outcome": { "kind": "terminal", "handle": "term_1" },
-                "prompt": { "outcome": "not-delivered" }
-            }
-        });
-        assert!(terminal_handle(&orca_output(&missed.to_string())).unwrap_err().contains("term_1"));
-    }
-
-    #[test]
-    fn a_closed_orca_is_not_a_terminal_error() {
-        let closed = json!({ "ok": false, "error": { "code": "runtime_unavailable", "message": "runtime_unavailable" } });
-        assert!(orca_not_running(&orca_output(&closed.to_string())));
-        let text = OrcaOutput { status_ok: false, stdout: String::new(), stderr: "Orca is not running. Run 'orca open' first.\n".to_string() };
-        assert!(orca_not_running(&text));
-        assert!(!orca_not_running(&orca_output(&started("term_1"))));
-    }
-
-    #[test]
-    fn a_launch_error_uses_the_next_step_when_the_message_is_the_code() {
-        let missing = json!({
-            "ok": false,
-            "error": {
-                "code": "selector_not_found",
-                "message": "selector_not_found",
-                "data": { "nextSteps": ["No Orca workspace matched the worktree selector."] }
-            }
-        });
-        let err = terminal_handle(&orca_output(&missing.to_string())).unwrap_err();
-        assert_eq!(err, "failed to start the Orca terminal: No Orca workspace matched the worktree selector.");
+    fn chat_id_rejects_a_failure_or_a_bad_id() {
+        let failed = chat_id(false, "", "Not logged in.\nRun login.\n").unwrap_err();
+        assert_eq!(failed, "failed to create the Cursor chat: Not logged in.");
+        assert!(chat_id(true, "", "").is_err());
+        assert!(chat_id(true, "../chat 1", "").is_err());
     }
 }

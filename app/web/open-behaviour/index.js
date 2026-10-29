@@ -172,7 +172,7 @@ export function mount(main, api) {
         <button class="g-button" type="submit" disabled>Save</button>
         <button class="g-button resolve" type="button" hidden>Resolve</button>
       </form>
-      <p class="resolve-terminal" hidden></p>`;
+      <p class="resolve-chat" hidden></p>`;
     view.querySelector(".num").textContent = `#${item.id}`;
     appendText(view.querySelector("h3"), item.item);
     const kind = view.querySelector(".kind");
@@ -225,13 +225,13 @@ export function mount(main, api) {
       input,
       saveButton,
       resolveButton,
-      resolveTerminal: view.querySelector(".resolve-terminal"),
+      resolveChat: view.querySelector(".resolve-chat"),
       status: view.querySelector(".status"),
     };
   }
 
   function updateCard(key) {
-    const { view, input, saveButton, resolveButton, resolveTerminal, status } = cards.get(key);
+    const { view, input, saveButton, resolveButton, resolveChat, status } = cards.get(key);
     const saved = behaviour.state.decisions[key] ?? "";
     const resolve = behaviour.state.resolves[key] ?? "";
     const edited = input.value.trim() !== saved;
@@ -241,8 +241,8 @@ export function mount(main, api) {
     resolveButton.hidden = saved === "";
     resolveButton.disabled = edited || resolve !== "";
     resolveButton.textContent = resolve === "" ? "Resolve" : resolve === "starting" ? "Starting…" : "Started";
-    resolveTerminal.hidden = resolve === "" || resolve === "starting";
-    resolveTerminal.textContent = `The agent resolves this item in Orca terminal ${resolve}.`;
+    resolveChat.hidden = resolve === "" || resolve === "starting";
+    resolveChat.textContent = `The agent resolves this item in Cursor chat ${resolve}. Run "cursor-agent --resume ${resolve}" to open it.`;
   }
 
   function render() {

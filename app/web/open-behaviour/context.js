@@ -29,14 +29,14 @@ export function groupsByStatus(tab, decisions) {
   return { open, decided };
 }
 
-// the in-progress value is not a started terminal, so a reload can start the item again
+// the in-progress value is not a started chat, so a reload can start the item again
 function savedResolves(resolves) {
   return Object.fromEntries(Object.entries(resolves).filter(([, value]) => value && value !== "starting"));
 }
 
 // onChange runs after each change of the state, so the page can render again
 export function createOpenBehaviour(api, onChange = () => {}) {
-  // resolves maps a decision key to "starting" or to the Orca terminal handle
+  // resolves maps a decision key to "starting" or to the Cursor chat id
   const state = { tabs: [], decisions: {}, resolves: {}, loaded: false, error: "" };
 
   async function load() {
@@ -78,9 +78,9 @@ export function createOpenBehaviour(api, onChange = () => {}) {
     if (!decision || state.resolves[key]) return;
     state.resolves = { ...state.resolves, [key]: "starting" };
     onChange();
-    let terminal;
+    let chat;
     try {
-      ({ terminal } = await api.resolveOpenBehaviour({
+      ({ chat } = await api.resolveOpenBehaviour({
         tab: tab.id,
         spec: group.spec,
         id: item.id,
@@ -93,7 +93,7 @@ export function createOpenBehaviour(api, onChange = () => {}) {
       onChange();
       return;
     }
-    const next = { ...state.resolves, [key]: terminal };
+    const next = { ...state.resolves, [key]: chat };
     try {
       await api.savePage(RESOLVES_PAGE, savedResolves(next));
       state.resolves = next;

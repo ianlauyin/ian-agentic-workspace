@@ -40,10 +40,10 @@ Each item is one card. The card has these parts, in this order:
 
 - The Resolve button shows only on a card that has a saved final decision.
 - The Resolve button is disabled when the input text is not the same as the saved decision. Save the decision first.
-- Resolve starts one new terminal in Orca, in this workspace, and starts one Cursor agent in that terminal. The model is Claude Opus 5.5 with medium effort. The agent resolves the item as the saved final decision tells, and then deletes the item from `spec/open-behaviour.json` of the project. It obeys `AGENTS.md`.
+- Resolve starts one Cursor agent in the background, in this workspace, in a new Cursor chat. The model is Claude Opus 5.5 with medium effort. The agent resolves the item as the saved final decision tells, and then deletes the item from `spec/open-behaviour.json` of the project. It obeys `AGENTS.md`.
 - The agent runs without a person. It can edit files and run commands without approval.
 - The agent continues when the page closes or the server restarts.
-- After the start, the button shows "Started" and stays disabled. The card shows the Orca terminal of the agent. A reload keeps this state.
+- After the start, the button shows "Started" and stays disabled. The card shows the chat id of the agent and the `cursor-agent --resume` command that opens the chat. A reload keeps this state.
 - The page does not show when the agent stops. After the agent deletes the item from the file, the item is not on the page after a reload.
 - If the start fails, the page shows the error, and the user can click Resolve again.
 - The server starts an agent only for an item that is in `spec/open-behaviour.json` of a project in `conf/projects.json`. A different item returns 400.
@@ -55,7 +55,7 @@ Each item is one card. The card has these parts, in this order:
 - The key of a decision is `<tab id>/<spec>/<item id>`. `<spec>` is the `spec` field of the entry, as `<package>/NN_name`. The data is `{"<key>": "<decision>"}`.
 - When the page opens, it loads `open-behaviour-decisions` with `GET /page`.
 - Each successful resolve writes all started resolves with `PUT /page`, as `open-behaviour-resolves`.
-- The key of a resolve is the same as the key of a decision. The data is `{"<key>": "<terminal handle>"}`.
+- The key of a resolve is the same as the key of a decision. The data is `{"<key>": "<chat id>"}`.
 - When the page opens, it loads `open-behaviour-resolves` with `GET /page`.
 - A resolve is saved only after the start is successful. The page does not save the value `starting`.
 - If a save of the resolves fails, the page shows the error and keeps the last saved resolves.

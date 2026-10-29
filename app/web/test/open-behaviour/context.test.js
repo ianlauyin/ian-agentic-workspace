@@ -23,7 +23,7 @@ function fakeApi(saved, tabs = TABS, started = null) {
     resolveOpenBehaviour: async (body) => {
       if (failResolve) throw new Error("no agent");
       resolves.push(body);
-      return { terminal: "term_1" };
+      return { chat: "chat_1" };
     },
     loadOpenBehaviour: async () => {
       if (failLoad) throw new Error(failLoad);
@@ -79,9 +79,9 @@ describe("createOpenBehaviour", () => {
   });
 
   it("loads the saved resolves", async () => {
-    const behaviour = createOpenBehaviour(fakeApi({ [KEY]: "a" }, TABS, { [KEY]: "term_9" }).api);
+    const behaviour = createOpenBehaviour(fakeApi({ [KEY]: "a" }, TABS, { [KEY]: "chat_9" }).api);
     await behaviour.load();
-    assert.deepEqual(behaviour.state.resolves, { [KEY]: "term_9" });
+    assert.deepEqual(behaviour.state.resolves, { [KEY]: "chat_9" });
   });
 
   it("shows the error when the load fails", async () => {
@@ -126,23 +126,23 @@ describe("resolve", () => {
   const group = tab.groups[0];
   const item = group.items[0];
 
-  it("starts the resolve with the saved decision and keeps the terminal", async () => {
+  it("starts the resolve with the saved decision and keeps the chat", async () => {
     const fake = fakeApi({ [KEY]: "a" });
     const behaviour = createOpenBehaviour(fake.api);
     await behaviour.load();
     await behaviour.resolve(tab, group, item);
     assert.deepEqual(fake.resolves, [{ tab: "my-app", spec: "01_login", id: 1, decision: "a" }]);
-    assert.deepEqual(behaviour.state.resolves, { [KEY]: "term_1" });
-    assert.deepEqual(fake.saves, [{ name: "open-behaviour-resolves", data: { [KEY]: "term_1" } }]);
+    assert.deepEqual(behaviour.state.resolves, { [KEY]: "chat_1" });
+    assert.deepEqual(fake.saves, [{ name: "open-behaviour-resolves", data: { [KEY]: "chat_1" } }]);
   });
 
   it("keeps a saved resolve and does not start the item again", async () => {
-    const fake = fakeApi({ [KEY]: "a" }, TABS, { [KEY]: "term_9" });
+    const fake = fakeApi({ [KEY]: "a" }, TABS, { [KEY]: "chat_9" });
     const behaviour = createOpenBehaviour(fake.api);
     await behaviour.load();
     await behaviour.resolve(tab, group, item);
     assert.equal(fake.resolves.length, 0);
-    assert.deepEqual(behaviour.state.resolves, { [KEY]: "term_9" });
+    assert.deepEqual(behaviour.state.resolves, { [KEY]: "chat_9" });
   });
 
   it("does not start an item with no decision or an item that started", async () => {
@@ -168,12 +168,12 @@ describe("resolve", () => {
   });
 
   it("keeps the last saved resolves when a save fails", async () => {
-    const fake = fakeApi({ [KEY]: "a" }, TABS, { "my-app/01_login/2": "term_9" });
+    const fake = fakeApi({ [KEY]: "a" }, TABS, { "my-app/01_login/2": "chat_9" });
     const behaviour = createOpenBehaviour(fake.api);
     await behaviour.load();
     fake.failSaves();
     await behaviour.resolve(tab, group, item);
-    assert.deepEqual(behaviour.state.resolves, { "my-app/01_login/2": "term_9" });
+    assert.deepEqual(behaviour.state.resolves, { "my-app/01_login/2": "chat_9" });
     assert.equal(behaviour.state.error, "Failed to save: db down");
   });
 });
