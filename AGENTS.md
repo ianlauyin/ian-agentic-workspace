@@ -10,6 +10,7 @@ This repo is a workspace for a primary agent. The primary agent gives the work t
 | Subagent | Does one part of the task in one target repo | The rules in `rules/` of this workspace, and the instructions of the target repo |
 
 - The primary agent does not edit the code of a different repo. It calls a subagent.
+- The primary agent calls each subagent with Grok 4.7 and high effort.
 - After a subagent changes the code, the primary agent does a code review of the changes in the target repo. The review must find bugs, and code that does not obey the rules in `rules/`.
 - If the review finds a problem, the primary agent does not fix the code. It calls the subagent again to fix the problem. Then it does the review again.
 - If a rule in this workspace and an instruction of the target repo are different, obey the rule in the target repo.
