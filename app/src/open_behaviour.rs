@@ -17,7 +17,7 @@ const LOG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/resolve");
 const ENV_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.env");
 const API_AGENTS: &str = "https://api.cursor.com/v1/agents";
 const API_KEY_VAR: &str = "CURSOR_API_KEY";
-const AGENT_MODEL: &str = "claude-opus-5-5-medium";
+const AGENT_MODEL: &str = "claude-opus-5-5";
 const SUBAGENT: &str = "target-repo";
 const TOOL_DETAILS: [&str; 6] = ["command", "path", "pattern", "globPattern", "query", "url"];
 
@@ -155,7 +155,7 @@ fn create_body(req: &ResolveRequest, item: &Value, decision: &str, workspace: &(
     json!({
         "name": name,
         "prompt": { "text": resolve_prompt(req, item, decision, &workspace.0, &target.0) },
-        "model": { "id": AGENT_MODEL },
+        "model": { "id": AGENT_MODEL, "params": [{ "id": "effort", "value": "medium" }] },
         "repos": repos,
         "autoCreatePR": false,
         "customSubagents": [{
@@ -724,6 +724,8 @@ mod tests {
         assert_eq!(body["repos"][0]["url"], "https://github.com/acme/workspace");
         assert_eq!(body["repos"][1]["url"], "https://github.com/acme/my-app");
         assert_eq!(body["model"]["id"], AGENT_MODEL);
+        assert_eq!(body["model"]["params"][0]["id"], "effort");
+        assert_eq!(body["model"]["params"][0]["value"], "medium");
         assert_eq!(body["autoCreatePR"], false);
         assert_eq!(body["customSubagents"][0]["name"], "target-repo");
         assert!(body["customSubagents"][0]["prompt"].as_str().unwrap().contains("https://github.com/acme/my-app"));
