@@ -13,6 +13,12 @@ async function request(path, init) {
 
 const api = {
   loadOpenBehaviour: () => request("/open-behaviour-items"),
+  resolveOpenBehaviour: (body) =>
+    request("/open-behaviour-resolve", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   loadPage: (name) => request(`/page?${new URLSearchParams({ name })}`),
   savePage: (name, data) =>
     request("/page", {

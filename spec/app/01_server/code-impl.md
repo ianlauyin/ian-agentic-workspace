@@ -4,11 +4,11 @@
 
 - `app/src/main.rs` builds the router and starts the server. It also changes each plain-text error of axum and tower-http to JSON.
 - `app/src/page.rs` holds the `/page` routes and the check of the page name.
-- `app/src/open_behaviour.rs` holds the `/open-behaviour-items` route. Refer to `spec/app/03_open-behaviour/code-impl.md`.
+- `app/src/open_behaviour.rs` holds the `/open-behaviour-items` route and the `/open-behaviour-resolve` route. Refer to `spec/app/03_open-behaviour/code-impl.md`.
 - `app/src/db.rs` holds the DB access.
 - `app/web/` is the frontend. It uses plain HTML, JavaScript modules, and CSS. It has no build step and no packages.
 - `app/web/index.html` is the page shell. It has the tab bar and `main`.
-- `app/web/index.js` holds the list of the pages and the API client for `/page`. It fills the tab bar and loads the module of the current page. An unknown path goes to `/todo`.
+- `app/web/index.js` holds the list of the pages and the API client for all routes. It fills the tab bar and loads the module of the current page. An unknown path goes to `/todo`.
 - `app/web/index.css` holds the color tokens, the styles of the HTML elements, and the UI controls: `g-tab-bar`, `g-button`, and `g-text-input`.
 - Each page is a folder `app/web/<page>/`. Its `index.js` exports `mount(main, api)`, and its `index.css` holds its styles.
 - The tests of the frontend are in `app/web/test/`. They use the Node test runner.

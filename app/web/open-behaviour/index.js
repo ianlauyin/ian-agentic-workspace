@@ -58,7 +58,7 @@ export function mount(main, api) {
     section.innerHTML = `<h2></h2><p class="source"></p>`;
     section.querySelector("h2").textContent = group.title;
     const source = section.querySelector(".source");
-    source.textContent = `${group.source} · ${group.spec} · `;
+    source.textContent = `${group.spec} · `;
     appendText(source, group.context ?? "");
     return section;
   }
@@ -95,7 +95,7 @@ export function mount(main, api) {
         slots.push({ group, openSection, decidedSection });
         for (const item of group.items) {
           const key = decisionKey(tab, group, item);
-          cards.set(key, itemCard(key, item));
+          cards.set(key, itemCard(key, tab, group, item));
         }
       }
       for (const slot of slots) panel.append(slot.decidedSection);
@@ -124,13 +124,13 @@ export function mount(main, api) {
 
   function place(panel, tab, groups, sectionName) {
     for (const group of groups) {
-      const slot = panel.slots.find((item) => item.group.source === group.source && item.group.spec === group.spec);
+      const slot = panel.slots.find((item) => item.group.spec === group.spec);
       slot[sectionName].hidden = false;
       for (const item of group.items) slot[sectionName].append(cards.get(decisionKey(tab, group, item)).view);
     }
   }
 
-  function itemCard(key, item) {
+  function itemCard(key, tab, group, item) {
     const view = document.createElement("article");
     view.className = "open-behaviour-page-card";
     view.innerHTML = `
@@ -157,7 +157,9 @@ export function mount(main, api) {
           <textarea class="g-text-input" rows="2" placeholder="Write the final decision"></textarea>
         </label>
         <button class="g-button" type="submit" disabled>Save</button>
-      </form>`;
+        <button class="g-button resolve" type="button" hidden>Resolve</button>
+      </form>
+      <p class="resolve-log" hidden></p>`;
     view.querySelector(".num").textContent = `#${item.id}`;
     appendText(view.querySelector("h3"), item.item);
     const kind = view.querySelector(".kind");
@@ -191,7 +193,8 @@ export function mount(main, api) {
 
     const form = view.querySelector(".decide-form");
     const input = form.querySelector("textarea");
-    const saveButton = form.querySelector("button");
+    const saveButton = form.querySelector("button[type=submit]");
+    const resolveButton = form.querySelector(".resolve");
     input.value = behaviour.state.decisions[key] ?? "";
     input.addEventListener("input", () => updateCard(key));
     form.addEventListener("submit", (e) => {
@@ -201,16 +204,31 @@ export function mount(main, api) {
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) form.requestSubmit();
     });
+    resolveButton.addEventListener("click", () => void behaviour.resolve(tab, group, item));
 
-    return { view, input, saveButton, status: view.querySelector(".status") };
+    return {
+      view,
+      input,
+      saveButton,
+      resolveButton,
+      resolveLog: view.querySelector(".resolve-log"),
+      status: view.querySelector(".status"),
+    };
   }
 
   function updateCard(key) {
-    const { view, input, saveButton, status } = cards.get(key);
+    const { view, input, saveButton, resolveButton, resolveLog, status } = cards.get(key);
     const saved = behaviour.state.decisions[key] ?? "";
+    const resolve = behaviour.state.resolves[key] ?? "";
+    const edited = input.value.trim() !== saved;
     view.classList.toggle("decided", saved !== "");
     status.textContent = saved ? "Decided" : "Open";
-    saveButton.disabled = input.value.trim() === saved;
+    saveButton.disabled = !edited;
+    resolveButton.hidden = saved === "";
+    resolveButton.disabled = edited || resolve !== "";
+    resolveButton.textContent = resolve === "" ? "Resolve" : resolve === "starting" ? "Starting…" : "Started";
+    resolveLog.hidden = resolve === "" || resolve === "starting";
+    resolveLog.textContent = `The agent resolves this item. Log: ${resolve}`;
   }
 
   function render() {

@@ -1,9 +1,7 @@
 const PAGE_NAME = "open-behaviour-decisions";
 
-// a spec folder name is unique only in its package, so the key has the package
 export function decisionKey(tab, group, item) {
-  const spec = group.package ? `${group.package}/${group.spec}` : group.spec;
-  return `${tab.id}/${spec}/${item.id}`;
+  return `${tab.id}/${group.spec}/${item.id}`;
 }
 
 export function groupsByStatus(tab, decisions) {
@@ -24,7 +22,8 @@ export function groupsByStatus(tab, decisions) {
 
 // onChange runs after each change of the state, so the page can render again
 export function createOpenBehaviour(api, onChange = () => {}) {
-  const state = { tabs: [], decisions: {}, loaded: false, error: "" };
+  // resolves maps a decision key to "starting" or to the log path of the started run
+  const state = { tabs: [], decisions: {}, resolves: {}, loaded: false, error: "" };
 
   async function load() {
     try {
@@ -54,5 +53,28 @@ export function createOpenBehaviour(api, onChange = () => {}) {
     onChange();
   }
 
-  return { state, load, decide };
+  async function resolve(tab, group, item) {
+    const key = decisionKey(tab, group, item);
+    const decision = state.decisions[key];
+    if (!decision || state.resolves[key]) return;
+    state.resolves = { ...state.resolves, [key]: "starting" };
+    onChange();
+    try {
+      const { log } = await api.resolveOpenBehaviour({
+        tab: tab.id,
+        spec: group.spec,
+        id: item.id,
+        decision,
+      });
+      state.resolves = { ...state.resolves, [key]: log };
+      state.error = "";
+    } catch (e) {
+      const { [key]: _, ...rest } = state.resolves;
+      state.resolves = rest;
+      state.error = `Failed to start the resolve: ${e.message}`;
+    }
+    onChange();
+  }
+
+  return { state, load, decide, resolve };
 }

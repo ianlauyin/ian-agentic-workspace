@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, get_service};
+use axum::routing::{get, get_service, post};
 use axum::{Json, Router};
 use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
@@ -32,7 +32,8 @@ fn app(db: Arc<Db>, web_dir: &str) -> Router {
     let index = ServeFile::new(format!("{web_dir}/index.html"));
     let mut router = Router::new()
         .route("/page", get(page::load).put(page::save))
-        .route("/open-behaviour-items", get(open_behaviour::load));
+        .route("/open-behaviour-items", get(open_behaviour::load))
+        .route("/open-behaviour-resolve", post(open_behaviour::resolve));
     for path in PAGE_PATHS {
         router = router.route(path, get_service(index.clone()));
     }

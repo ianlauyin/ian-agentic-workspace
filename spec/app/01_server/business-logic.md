@@ -4,7 +4,7 @@
 
 - The server listens on `http://127.0.0.1:47322`.
 - A route returns JSON. If it has no data to return, it returns `null`.
-- A `GET` route takes its params in the query. A `PUT` route takes a JSON body.
+- A `GET` route takes its params in the query. A `PUT` route and a `POST` route take a JSON body.
 - A body without the JSON content type returns 415.
 - A JSON body without a necessary field returns 422.
 - A bad request returns 400.
@@ -32,5 +32,6 @@
 | `GET /page` | Returns the saved JSON of a page by `name`. If there is no save, returns `null`. |
 | `PUT /page` | Saves the JSON `data` of a page by `name`, and replaces the last save. Returns `null`. |
 | `GET /open-behaviour-items` | Returns the open-behaviour items of each project in `conf/projects.json`. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
+| `POST /open-behaviour-resolve` | Starts an agent that resolves one decided item. Returns `{"log": "<path>"}`. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
 
 - A page name has only letters, digits, and `-`. Other names return 400.

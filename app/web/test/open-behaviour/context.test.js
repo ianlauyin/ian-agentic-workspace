@@ -7,7 +7,7 @@ const TABS = [
   {
     id: "my-app",
     name: "my-app",
-    groups: [{ spec: "01_login", title: "Login", package: "", source: "spec/open-behaviour.json", items: [{ id: 1, item: "Sign-in" }] }],
+    groups: [{ spec: "01_login", title: "Login", items: [{ id: 1, item: "Sign-in" }] }],
     errors: [],
   },
 ];
@@ -15,9 +15,16 @@ const KEY = "my-app/01_login/1";
 
 function fakeApi(saved, tabs = TABS) {
   const saves = [];
+  const resolves = [];
   let failSave = false;
   let failLoad = "";
+  let failResolve = false;
   const api = {
+    resolveOpenBehaviour: async (body) => {
+      if (failResolve) throw new Error("no agent");
+      resolves.push(body);
+      return { log: "app/data/resolve/1.log" };
+    },
     loadOpenBehaviour: async () => {
       if (failLoad) throw new Error(failLoad);
       return tabs;
@@ -31,7 +38,14 @@ function fakeApi(saved, tabs = TABS) {
       saves.push({ name, data });
     },
   };
-  return { api, saves, failSaves: () => (failSave = true), failLoads: (message) => (failLoad = message) };
+  return {
+    api,
+    saves,
+    resolves,
+    failSaves: () => (failSave = true),
+    failLoads: (message) => (failLoad = message),
+    failResolves: () => (failResolve = true),
+  };
 }
 
 describe("decisionKey", () => {
@@ -40,8 +54,8 @@ describe("decisionKey", () => {
     assert.equal(decisionKey(tab, tab.groups[0], tab.groups[0].items[0]), KEY);
   });
 
-  it("puts the package before the spec", () => {
-    const group = { spec: "01_login", package: "site" };
+  it("keeps the package in the spec path", () => {
+    const group = { spec: "site/01_login" };
     assert.equal(decisionKey(TABS[0], group, { id: 2 }), "my-app/site/01_login/2");
   });
 });
@@ -98,6 +112,42 @@ describe("createOpenBehaviour", () => {
   });
 });
 
+describe("resolve", () => {
+  const tab = TABS[0];
+  const group = tab.groups[0];
+  const item = group.items[0];
+
+  it("starts the resolve with the saved decision and keeps the log path", async () => {
+    const fake = fakeApi({ [KEY]: "a" });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.resolve(tab, group, item);
+    assert.deepEqual(fake.resolves, [{ tab: "my-app", spec: "01_login", id: 1, decision: "a" }]);
+    assert.deepEqual(behaviour.state.resolves, { [KEY]: "app/data/resolve/1.log" });
+  });
+
+  it("does not start an item with no decision or an item that started", async () => {
+    const fake = fakeApi(null);
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.resolve(tab, group, item);
+    behaviour.state.decisions = { [KEY]: "a" };
+    await behaviour.resolve(tab, group, item);
+    await behaviour.resolve(tab, group, item);
+    assert.equal(fake.resolves.length, 1);
+  });
+
+  it("shows the error and lets the user try again when the start fails", async () => {
+    const fake = fakeApi({ [KEY]: "a" });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    fake.failResolves();
+    await behaviour.resolve(tab, group, item);
+    assert.deepEqual(behaviour.state.resolves, {});
+    assert.equal(behaviour.state.error, "Failed to start the resolve: no agent");
+  });
+});
+
 const SPLIT = {
   id: "my-app",
   name: "my-app",
@@ -105,7 +155,6 @@ const SPLIT = {
     {
       spec: "01_login",
       title: "Login",
-      package: "",
       items: [
         { id: 1, item: "Sign-in" },
         { id: 2, item: "Home" },
@@ -114,7 +163,6 @@ const SPLIT = {
     {
       spec: "02_pay",
       title: "Pay",
-      package: "",
       items: [{ id: 1, item: "Price" }],
     },
   ],
