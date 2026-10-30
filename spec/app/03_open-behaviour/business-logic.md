@@ -76,6 +76,8 @@ Each item is one card. The card has these parts, in this order:
 - The key of a resolve is the same as the key of a decision. The data is `{"<key>": "<chat id>"}`.
 - When the page opens, it loads `open-behaviour-resolves` with `GET /page`.
 - The page loads the progress of a started resolve with `GET /open-behaviour-progress`. The progress is not in the DB.
+- When the page opens, it removes each decision and each resolve whose item is not in the file of its project. A new item that uses the id of a resolved item thus does not get the old decision or the old resolve. The page writes the clean data with `PUT /page`. The page does this only for a project whose file was read with no error. The entries of a project with an error stay.
+- If the save of the clean data fails, the page shows the error and shows the clean data.
 - A resolve is saved only after the start is successful. The page does not save the value `starting`.
 - When an agent fails, the page writes the started resolves without that item with `PUT /page`.
 - If a save of the resolves fails, the page shows the error and keeps the last saved resolves.

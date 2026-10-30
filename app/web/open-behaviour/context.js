@@ -35,6 +35,16 @@ function savedResolves(resolves) {
   return Object.fromEntries(Object.entries(resolves).filter(([, value]) => value && value !== "starting"));
 }
 
+// a tab with an error shows no items, so its keys stay
+function withoutGoneItems(tabs, saved) {
+  const live = new Set(tabs.flatMap((tab) => tab.groups.flatMap((group) => group.items.map((item) => decisionKey(tab, group, item)))));
+  const checked = tabs.filter((tab) => tab.errors.length === 0);
+  const kept = Object.entries(saved).filter(
+    ([key]) => live.has(key) || !checked.some((tab) => key.startsWith(`${tab.id}/`)),
+  );
+  return kept.length === Object.keys(saved).length ? saved : Object.fromEntries(kept);
+}
+
 // onChange runs after each change of the state, so the page can render again
 export function createOpenBehaviour(api, onChange = () => {}) {
   // resolves maps a decision key to "starting" or to the chat id of the local agent
@@ -49,10 +59,17 @@ export function createOpenBehaviour(api, onChange = () => {}) {
         api.loadPage(RESOLVES_PAGE),
       ]);
       state.tabs = tabs;
-      state.decisions = decisions ?? {};
-      state.resolves = resolves ?? {};
+      state.decisions = withoutGoneItems(tabs, decisions ?? {});
+      state.resolves = withoutGoneItems(tabs, resolves ?? {});
       state.loaded = true;
       state.error = "";
+      // a new item can use the id of a resolved item, so the old entries must go
+      try {
+        if (decisions && state.decisions !== decisions) await api.savePage(DECISIONS_PAGE, state.decisions);
+        if (resolves && state.resolves !== resolves) await api.savePage(RESOLVES_PAGE, savedResolves(state.resolves));
+      } catch (e) {
+        state.error = `Failed to save: ${e.message}`;
+      }
     } catch (e) {
       state.error = `Failed to load the open behaviour: ${e.message}`;
     }

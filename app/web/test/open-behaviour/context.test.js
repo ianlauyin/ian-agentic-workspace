@@ -7,7 +7,7 @@ const TABS = [
   {
     id: "my-app",
     name: "my-app",
-    groups: [{ spec: "01_login", title: "Login", items: [{ id: 1, item: "Sign-in" }] }],
+    groups: [{ spec: "01_login", title: "Login", items: [{ id: 1, item: "Sign-in" }, { id: 2, item: "Home" }] }],
     errors: [],
   },
 ];
@@ -98,6 +98,38 @@ describe("createOpenBehaviour", () => {
     const behaviour = createOpenBehaviour(fakeApi({ [KEY]: "a" }, TABS, { [KEY]: "chat_9" }).api);
     await behaviour.load();
     assert.deepEqual(behaviour.state.resolves, { [KEY]: "chat_9" });
+  });
+
+  it("removes the decisions and the resolves of items that are not in the file", async () => {
+    const fake = fakeApi({ [KEY]: "a", "my-app/01_login/9": "b" }, TABS, { "my-app/01_login/9": "chat_9", "my-app/01_login/2": "chat_8" });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    assert.deepEqual(behaviour.state.decisions, { [KEY]: "a" });
+    assert.deepEqual(behaviour.state.resolves, { "my-app/01_login/2": "chat_8" });
+    assert.deepEqual(fake.saves, [
+      { name: "open-behaviour-decisions", data: { [KEY]: "a" } },
+      { name: "open-behaviour-resolves", data: { "my-app/01_login/2": "chat_8" } },
+    ]);
+  });
+
+  it("keeps the entries of a tab with an error and of other tabs", async () => {
+    const tabs = [{ id: "my-app", name: "my-app", groups: [], errors: ["bad json"] }];
+    const saved = { [KEY]: "a", "other/01_x/1": "b" };
+    const fake = fakeApi(saved, tabs);
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    assert.deepEqual(behaviour.state.decisions, saved);
+    assert.deepEqual(fake.saves, []);
+  });
+
+  it("shows the error when the cleanup save fails and still shows the clean data", async () => {
+    const fake = fakeApi({ "my-app/01_login/9": "b" });
+    fake.failSaves();
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    assert.deepEqual(behaviour.state.decisions, {});
+    assert.equal(behaviour.state.loaded, true);
+    assert.equal(behaviour.state.error, "Failed to save: db down");
   });
 
   it("shows the error when the load fails", async () => {
