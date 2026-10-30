@@ -1,6 +1,8 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::Mutex;
 
 use axum::Json;
 use axum::extract::Query;
@@ -20,6 +22,11 @@ const API_KEY_VAR: &str = "CURSOR_API_KEY";
 const AGENT_MODEL: &str = "claude-opus-5-5";
 const SUBAGENT: &str = "target-repo";
 const TOOL_DETAILS: [&str; 6] = ["command", "path", "pattern", "globPattern", "query", "url"];
+const LOCAL_BIN: &str = "cursor-agent";
+const LOCAL_MODEL: &str = "claude-opus-5-5-medium";
+const LOCAL_START: &str = "The cloud agent failed. A local agent resolves the item now.";
+
+static LOCAL_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Serialize)]
 pub struct Tab {
@@ -105,8 +112,13 @@ pub async fn progress(Query(req): Query<ProgressRequest>) -> Result<Json<Progres
         return Err(ResolveError::BadItem("Bad chat id.".to_string()));
     }
     let path = Path::new(LOG_DIR).join(format!("{}.log", req.chat));
-    if req.chat.starts_with("bc-") && !log_has_end(&read_log(&path)) && let Some(line) = cloud_end_line(&req.chat).await {
-        append_end(&path, &line).map_err(ResolveError::Failed)?;
+    let log = read_log(&path);
+    if req.chat.starts_with("bc-")
+        && !log_has_end(&log)
+        && !log.contains(LOCAL_START)
+        && let Some((status, text)) = cloud_run(&req.chat).await
+    {
+        end_cloud_run(&path, &status, &text).map_err(ResolveError::Failed)?;
     }
     if !path.is_file() {
         return Err(ResolveError::BadItem("The chat has no log.".to_string()));
@@ -129,6 +141,8 @@ async fn start_agent(workspace: &Path, target: &Path, req: &ResolveRequest, item
     fs::create_dir_all(LOG_DIR).map_err(|e| format!("failed to create {LOG_DIR}: {e}"))?;
     let log_path = Path::new(LOG_DIR).join(format!("{chat}.log"));
     fs::File::create(&log_path).map_err(|e| format!("failed to create {}: {e}", log_path.display()))?;
+    let prompt_path = log_path.with_extension("prompt");
+    fs::write(&prompt_path, local_prompt(req, target, item, decision)).map_err(|e| format!("failed to create {}: {e}", prompt_path.display()))?;
     if valid_chat(&run) {
         let stream_chat = chat.clone();
         let stream_key = key.clone();
@@ -316,7 +330,7 @@ fn safe_text(key: &str, text: &str) -> String {
     if key.is_empty() { text.to_string() } else { text.replace(key, "***") }
 }
 
-async fn cloud_end_line(chat: &str) -> Option<String> {
+async fn cloud_run(chat: &str) -> Option<(String, String)> {
     let key = api_key().ok()?;
     let client = http().ok()?;
     let agent = get_json(&client, &key, &format!("{API_AGENTS}/{chat}")).await.ok()?;
@@ -325,7 +339,58 @@ async fn cloud_end_line(chat: &str) -> Option<String> {
         return None;
     }
     let run = get_json(&client, &key, &format!("{API_AGENTS}/{chat}/runs/{run_id}")).await.ok()?;
-    end_line(run["status"].as_str().unwrap_or(""), run["result"].as_str().unwrap_or(""))
+    Some((run["status"].as_str().unwrap_or("").to_string(), run["result"].as_str().unwrap_or("").to_string()))
+}
+
+fn end_cloud_run(log_path: &Path, status: &str, text: &str) -> Result<(), String> {
+    if status == "ERROR" && start_local(log_path) {
+        return Ok(());
+    }
+    match end_line(status, text) {
+        Some(line) => append_end(log_path, &line),
+        None => Ok(()),
+    }
+}
+
+// the lock and the start line in the log keep one local agent for each chat, also after a server restart
+fn start_local(log_path: &Path) -> bool {
+    let Ok(_guard) = LOCAL_LOCK.lock() else { return false };
+    if read_log(log_path).contains(LOCAL_START) {
+        return true;
+    }
+    let Ok(prompt) = fs::read_to_string(log_path.with_extension("prompt")) else { return false };
+    match spawn_local(&prompt, log_path) {
+        Ok(()) => true,
+        Err(error) => {
+            let _ = append_line(log_path, &error);
+            false
+        }
+    }
+}
+
+fn spawn_local(prompt: &str, log_path: &Path) -> Result<(), String> {
+    let workspace = fs::canonicalize(WORKSPACE_DIR).map_err(|e| format!("failed to open the workspace: {e}"))?;
+    append_line(log_path, LOCAL_START)?;
+    let log = fs::OpenOptions::new().append(true).open(log_path).map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
+    let err_log = log.try_clone().map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
+    let mut child = Command::new(LOCAL_BIN)
+        .args(["--print", "--output-format", "stream-json", "--force", "--trust", "--model", LOCAL_MODEL, "--workspace"])
+        .arg(&workspace)
+        .arg(prompt)
+        .current_dir(&workspace)
+        .stdin(Stdio::null())
+        .stdout(log)
+        .stderr(err_log)
+        // a new process group keeps the agent alive when Ctrl+C stops the server
+        .process_group(0)
+        .spawn()
+        .map_err(|e| format!("failed to start {LOCAL_BIN}: {e}"))?;
+    let log_path = log_path.to_path_buf();
+    tokio::spawn(async move {
+        let code = child.wait().await.ok().and_then(|status| status.code());
+        let _ = append_line(&log_path, &json!({ "type": "exit", "code": code }).to_string());
+    });
+    Ok(())
 }
 
 fn end_line(status: &str, text: &str) -> Option<String> {
@@ -381,9 +446,7 @@ fn apply_stream_block(block: &str, log_path: &Path, assistant: &mut String) -> R
         }
         "result" => {
             flush_assistant(log_path, assistant)?;
-            if let Some(line) = end_line(value["status"].as_str().unwrap_or(""), value["text"].as_str().unwrap_or("")) {
-                append_end(log_path, &line)?;
-            }
+            end_cloud_run(log_path, value["status"].as_str().unwrap_or(""), value["text"].as_str().unwrap_or(""))?;
         }
         "error" => {
             flush_assistant(log_path, assistant)?;
@@ -547,6 +610,24 @@ fn resolve_prompt(req: &ResolveRequest, item: &Value, decision: &str, workspace_
         spec = req.spec,
         id = req.id,
         tab = req.tab,
+    )
+}
+
+fn local_prompt(req: &ResolveRequest, root: &Path, item: &Value, decision: &str) -> String {
+    let item = serde_json::to_string_pretty(item).unwrap_or_default();
+    format!(
+        "Resolve one open-behaviour item of the project `{tab}`. The project is at `{root}`.\n\n\
+         - File: `{FILE_PATH}`\n\
+         - Spec: `{spec}`\n\
+         - Item: #{id}\n\n\
+         The item:\n\n```json\n{item}\n```\n\n\
+         The final decision of the user:\n\n{decision}\n\n\
+         Resolve the item as the final decision tells. When the item is resolved, delete it from `{FILE_PATH}`. \
+         Obey `AGENTS.md`.",
+        tab = req.tab,
+        root = root.display(),
+        spec = req.spec,
+        id = req.id,
     )
 }
 
@@ -753,6 +834,41 @@ mod tests {
         assert_eq!(end_line("FINISHED", "Done.").unwrap(), r#"{"type":"result","is_error":false,"result":"Done."}"#);
         assert!(end_line("ERROR", "").unwrap().contains("The agent failed."));
         assert_eq!(end_line("CANCELLED", "").unwrap(), r#"{"type":"exit","code":null}"#);
+    }
+
+    #[test]
+    fn end_cloud_run_ends_the_log_when_no_local_agent_can_start() {
+        let dir = temp_home("cloud-end");
+        let failed = dir.join("bc-1.log");
+        write(&failed, "");
+        end_cloud_run(&failed, "ERROR", "").unwrap();
+        assert_eq!(read_progress(&read_log(&failed)).status, "failed");
+
+        let finished = dir.join("bc-2.log");
+        write(&finished, "");
+        write(&finished.with_extension("prompt"), "Resolve it.");
+        end_cloud_run(&finished, "FINISHED", "Done.").unwrap();
+        assert_eq!(read_progress(&read_log(&finished)).status, "finished");
+    }
+
+    #[test]
+    fn end_cloud_run_keeps_a_started_local_agent() {
+        let dir = temp_home("cloud-local");
+        let log = dir.join("bc-1.log");
+        write(&log, &format!("{LOCAL_START}\n"));
+        write(&log.with_extension("prompt"), "Resolve it.");
+        end_cloud_run(&log, "ERROR", "").unwrap();
+        let progress = read_progress(&read_log(&log));
+        assert_eq!(progress, Progress { status: "running", steps: vec![step("output", LOCAL_START)] });
+    }
+
+    #[test]
+    fn local_prompt_has_the_project_path_and_the_decision() {
+        let req = resolve_request("my-app", "web/01_login", 3);
+        let prompt = local_prompt(&req, Path::new("/code/my-app"), &json!({ "id": 3 }), "Use option 1.");
+        for part in ["`my-app`", "`/code/my-app`", "`web/01_login`", "#3", "\"id\": 3", "Use option 1.", "AGENTS.md"] {
+            assert!(prompt.contains(part), "{part}");
+        }
     }
 
     #[test]

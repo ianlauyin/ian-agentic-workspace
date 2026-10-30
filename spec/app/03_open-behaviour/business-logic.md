@@ -45,15 +45,16 @@ Each item is one card. The card has these parts, in this order:
 - The remotes are the `origin` remote of this workspace and the `origin` remote of the project. The server sends each remote as an HTTPS URL. The start branch is the default branch of `origin`.
 - When the two remotes are the same URL, the server sends that remote one time.
 - The subagent resolves the item as the saved final decision tells. It obeys `AGENTS.md` in the target repository. It deletes the item from `spec/open-behaviour.json` on a new branch of the target remote. The page reads the local file, so the item stays on the page until that branch is in the local file.
+- When the cloud agent fails, the server starts one local Cursor agent for the same item. The local agent works in this workspace, on the local project folder. It obeys `AGENTS.md` of this workspace. The model is Claude Opus 5.5 with medium effort. The card keeps the same agent id. The progress shows "The cloud agent failed. A local agent resolves the item now.", and then the progress of the local agent. A cloud agent that stopped or finished does not start a local agent.
 - The agent runs without a person. It can edit files and run commands without approval.
 - The agent continues when the page closes or the server restarts.
 - After the start, the button shows "Started" and stays disabled. The card shows the cloud agent id and the agent URL. The agent is in the Cursor agents sidebar. The sidebar shows the agent when the source filter includes API. A reload keeps this state.
-- When the progress gives the status "the agent failed", the page removes the started resolve. The button shows "Resolve" again, and the card still shows the progress of the failed agent. A new click starts a new agent. An agent that stopped, or a progress that cannot be loaded, keeps the "Started" state.
+- When the progress gives the status "the agent failed", the page removes the started resolve. With a local agent after the cloud agent, this occurs only when the local agent also fails. The button shows "Resolve" again, and the card still shows the progress of the failed agent. A new click starts a new agent. An agent that stopped, or a progress that cannot be loaded, keeps the "Started" state.
 - Under the agent id, the card shows the progress of the agent: the status, each tool that the agent starts, and each message of the agent. The page loads the progress each 3 seconds while the agent works.
 - The status is one of these: the agent is working, the agent finished, the agent failed, or the agent stopped before it finished. When the status is not "working", the page does not load the progress again.
 - An error text of the agent shows as a step of the progress.
 - If the progress cannot be loaded, the card shows the error. A reload tries again.
-- When the log has no end, the progress route reads the cloud run. A run that has ended adds the end to the log. A failed read of the cloud run leaves the log as it is.
+- When the log has no end and no local agent started, the progress route reads the cloud run. A run that has ended adds the end to the log, or starts the local agent when the run failed. A failed read of the cloud run leaves the log as it is.
 - If the start fails, the page shows the error, and the user can click Resolve again.
 - The server starts an agent only for an item that is in `spec/open-behaviour.json` of a project in `conf/projects.json`. A different item returns 400.
 
