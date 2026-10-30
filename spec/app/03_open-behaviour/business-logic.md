@@ -10,9 +10,8 @@
 - When a kind is selected, the page shows only the items of that kind in all tabs. The badges, the number of items under the title, and the "No open item." text count only the items of that kind. "All" shows the items of all kinds.
 - The kind filter is not in the local DB. A reload selects "All" again.
 - When the page opens, it selects the first tab that has items. If no tab has items, it selects the first tab.
-- The page shows the open items of the selected tab first. It groups those items by spec entry, in the order of the source.
-- The page shows the decided items of the selected tab at the bottom. It groups those items by spec entry, in the order of the source.
-- A group with no open item is not in the open part. A group with no decided item is not at the bottom.
+- The page shows the items of the selected tab grouped by spec entry, in the order of the source. A saved final decision does not move the item.
+- A group with no item of the selected kind is not shown.
 - Each group shows the spec title, the spec folder path, and the context of the entry.
 - A tab with no items shows "No open item."
 - Under the title, the page shows the number of decided items and the number of all items in the selected tab.

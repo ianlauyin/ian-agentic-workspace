@@ -112,16 +112,16 @@ export function mount(main, api) {
       }
       const slots = [];
       for (const group of tab.groups) {
-        const openSection = groupSection(group);
-        const decidedSection = groupSection(group);
-        panel.append(openSection);
-        slots.push({ group, openSection, decidedSection });
+        const section = groupSection(group);
+        panel.append(section);
+        slots.push({ group, section });
         for (const item of group.items) {
           const key = decisionKey(tab, group, item);
-          cards.set(key, itemCard(key, tab, group, item));
+          const card = itemCard(key, tab, group, item);
+          cards.set(key, card);
+          section.append(card.view);
         }
       }
-      for (const slot of slots) panel.append(slot.decidedSection);
       const empty = document.createElement("p");
       empty.className = "empty";
       empty.textContent = "No open item.";
@@ -132,22 +132,9 @@ export function mount(main, api) {
     built = true;
   }
 
-  function placeCards(tab) {
-    const panel = panels.get(tab.id);
-    for (const slot of panel.slots) {
-      slot.openSection.hidden = true;
-      slot.decidedSection.hidden = true;
-    }
-    const { open, decided } = groupsByStatus(tab, behaviour.state.decisions);
-    place(panel, tab, open, "openSection");
-    place(panel, tab, decided, "decidedSection");
-  }
-
-  function place(panel, tab, groups, sectionName) {
-    for (const group of groups) {
-      const slot = panel.slots.find((item) => item.group.spec === group.spec);
-      slot[sectionName].hidden = false;
-      for (const item of group.items) slot[sectionName].append(cards.get(decisionKey(tab, group, item)).view);
+  function showGroups(tab) {
+    for (const slot of panels.get(tab.id).slots) {
+      slot.section.hidden = !tab.groups.some((group) => group.spec === slot.group.spec);
     }
   }
 
@@ -331,7 +318,7 @@ export function mount(main, api) {
     const shown = tabs.map((tab) => withKind(tab, kind));
     for (const tab of shown) {
       const panel = panels.get(tab.id);
-      placeCards(tab);
+      showGroups(tab);
       panel.panel.hidden = tab.id !== selected;
       panel.button.classList.toggle("on", tab.id === selected);
       panel.empty.hidden = tab.groups.some((group) => group.items.length > 0);
