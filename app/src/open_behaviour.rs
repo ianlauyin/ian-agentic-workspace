@@ -280,7 +280,7 @@ fn create_body(req: &ResolveRequest, item: &Value, decision: &str, target: &(Str
     let name: String = format!("Resolve {} {} #{}", req.tab, req.spec, req.id).chars().take(100).collect();
     json!({
         "name": name,
-        "prompt": { "text": resolve_prompt(req, item, decision, &target.0) },
+        "prompt": { "text": resolve_prompt(req, item, decision) },
         "model": { "id": AGENT_MODEL, "params": [{ "id": "reasoning_effort", "value": "medium" }] },
         "repos": [{ "url": target.0, "startingRef": target.1 }],
         "autoCreatePR": false
@@ -818,10 +818,10 @@ fn find_item(projects: &Map<String, Value>, home: &str, req: &ResolveRequest) ->
     Ok((root, item.clone()))
 }
 
-fn resolve_prompt(req: &ResolveRequest, item: &Value, decision: &str, target_url: &str) -> String {
+fn resolve_prompt(req: &ResolveRequest, item: &Value, decision: &str) -> String {
     let item = serde_json::to_string_pretty(item).unwrap_or_default();
     format!(
-        "Resolve one open-behaviour item in the repository `{target_url}`.\n\n\
+        "Resolve one open-behaviour item.\n\n\
          - File: `{FILE_PATH}`\n\
          - Spec: `{spec}`\n\
          - Item: #{id}\n\
@@ -830,7 +830,7 @@ fn resolve_prompt(req: &ResolveRequest, item: &Value, decision: &str, target_url
          The final decision of the user:\n\n{decision}\n\n\
          Resolve the item as the final decision tells. Change the code and `{FILE_PATH}` in the same change. \
          When the item is resolved, remove the whole item #{id} object from the `items` list of the `{spec}` entry \
-         in `{FILE_PATH}`. Do not keep the item with a resolved status or a note. Obey `AGENTS.md` in the repository.",
+         in `{FILE_PATH}`. Do not keep the item with a resolved status or a note.",
         spec = req.spec,
         id = req.id,
         tab = req.tab,
@@ -999,20 +999,19 @@ mod tests {
     #[test]
     fn resolve_prompt_has_the_item_and_the_decision() {
         let req = resolve_request("my-app", "web/01_login", 3);
-        let prompt = resolve_prompt(&req, &json!({ "id": 3 }), "Use option 1.", "https://github.com/acme/my-app");
+        let prompt = resolve_prompt(&req, &json!({ "id": 3 }), "Use option 1.");
         for part in [
             "`my-app`",
-            "https://github.com/acme/my-app",
             "`spec/open-behaviour.json`",
             "`web/01_login`",
             "#3",
             "\"id\": 3",
             "Use option 1.",
             "remove the whole item #3 object from the `items` list of the `web/01_login` entry",
-            "AGENTS.md",
         ] {
             assert!(prompt.contains(part), "{part}");
         }
+        assert!(!prompt.contains("AGENTS.md"));
     }
 
     #[test]
