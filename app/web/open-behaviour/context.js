@@ -37,7 +37,7 @@ function savedResolves(resolves) {
 
 // onChange runs after each change of the state, so the page can render again
 export function createOpenBehaviour(api, onChange = () => {}) {
-  // resolves maps a decision key to "starting" or to the Cursor chat id
+  // resolves maps a decision key to "starting" or to the chat id of the local agent
   const state = { tabs: [], decisions: {}, resolves: {}, progress: {}, loaded: false, error: "" };
   let refreshing = false;
 

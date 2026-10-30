@@ -39,25 +39,19 @@ Each item is one card. The card has these parts, in this order:
 
 - The Resolve button shows only on a card that has a saved final decision.
 - The Resolve button is disabled when the input text is not the same as the saved decision. Save the decision first.
-- Resolve starts one Cursor cloud agent directly on the remote of the project of the item. The agent does not get the remote of this workspace and calls no subagent. The model is Claude Sonnet 5.5 with medium effort. The server reads `CURSOR_API_KEY` from the process environment. When that value is empty, the server reads `.env` at the workspace root. An empty value is a start failure.
-- The remote is the `origin` remote of the project. The server sends it as an HTTPS URL. The start branch is the default branch of `origin`.
-- The agent resolves the item as the saved final decision tells. It obeys `AGENTS.md` in the project repository. When the item is resolved, the agent removes the full item from the `items` list of its spec entry in `spec/open-behaviour.json`. It does not keep the item with a resolved status or a note. It makes this change on a new branch of the project remote. A local agent makes the same change in the local project folder. The page reads the local file, so the item stays on the page until that branch is in the local file.
-- When an agent fails, the server starts the next agent for the same item, in this sequence:
-  1. A cloud agent with Claude Sonnet 5.5 and medium effort.
-  2. A local Cursor agent with Claude Sonnet 5.5 and medium effort. The progress shows "The cloud agent failed. A local agent resolves the item now."
-  3. A cloud agent with Grok 4.7 and high effort, on the same remote with the same prompt. The progress shows "The local agent failed. A Grok cloud agent resolves the item now." and the URL of the Grok cloud agent.
-  4. A local Cursor agent with Grok 4.7 and high effort. The progress shows "The Grok cloud agent failed. A local Grok agent resolves the item now."
-- A local agent works in the local project folder and obeys `AGENTS.md` of the project. A local agent fails when it gives a failed result, or when it exits with an error code before a result. When an agent cannot start, the server starts the next agent.
-- The card keeps the agent id of the first cloud agent. The progress shows the progress of each agent in sequence. An agent that stopped or finished does not start the next agent.
+- Resolve starts one local Cursor agent in the local project folder of the item. Resolve starts no cloud agent. The agent calls no subagent. The model is Claude Sonnet 5.5 with medium effort.
+- The agent resolves the item as the saved final decision tells. It obeys `AGENTS.md` of the project. When the item is resolved, the agent removes the full item from the `items` list of its spec entry in `spec/open-behaviour.json` of the local project folder. It does not keep the item with a resolved status or a note. The page reads the local file, so the item goes from the page after a reload.
+- When the first agent fails, the server starts a local Cursor agent with Grok 4.7 and high effort, in the same folder with the same prompt. The progress shows "The local agent failed. A local Grok agent resolves the item now."
+- An agent fails when it gives a failed result, or when it exits with an error code before a result. When the first agent cannot start, the server starts the Grok agent. When the Grok agent also cannot start, the start fails.
+- The card keeps the chat id that the server gives at the start. The progress shows the progress of the first agent and then of the Grok agent. An agent that stopped or finished does not start the Grok agent.
 - The agent runs without a person. It can edit files and run commands without approval.
 - The agent continues when the page closes or the server restarts.
-- After the start, the button shows "Started" and stays disabled. The card shows the cloud agent id and the agent URL. The agent is in the Cursor agents sidebar. The sidebar shows the agent when the source filter includes API. A reload keeps this state.
-- When the progress gives the status "the agent failed", the page removes the started resolve. With the fallback agents, this occurs only when the local Grok agent also fails, or when no next agent can start. The button shows "Resolve" again, and the card still shows the progress of the failed agent. A new click starts a new agent. An agent that stopped, or a progress that cannot be loaded, keeps the "Started" state.
+- After the start, the button shows "Started" and stays disabled. The card shows the chat id and tells that the local agent works in the project folder. A reload keeps this state.
+- When the progress gives the status "the agent failed", the page removes the started resolve. This occurs only when the Grok agent also fails, or when the Grok agent cannot start. The button shows "Resolve" again, and the card still shows the progress of the failed agent. A new click starts a new agent. An agent that stopped, or a progress that cannot be loaded, keeps the "Started" state.
 - Under the agent id, the card shows the progress of the agent: the status, each tool that the agent starts, and each message of the agent. The page loads the progress each 3 seconds while the agent works.
 - The status is one of these: the agent is working, the agent finished, the agent failed, or the agent stopped before it finished. When the status is not "working", the page does not load the progress again.
 - An error text of the agent shows as a step of the progress.
 - If the progress cannot be loaded, the card shows the error. A reload tries again.
-- When the current agent is a cloud agent and its run has no end in the log, the progress route reads the cloud run. A run that has ended adds the end to the log, or starts the next agent when the run failed. A failed read of the cloud run leaves the log as it is.
 - If the start fails, the page shows the error, and the user can click Resolve again.
 - The server starts an agent only for an item that is in `spec/open-behaviour.json` of a project in `conf/projects.json`. A different item returns 400.
 
@@ -65,11 +59,10 @@ Each item is one card. The card has these parts, in this order:
 
 - Under the progress, the card shows a follow-up input and a Send button. They show only when the started agent finished or stopped before it finished.
 - Send or Cmd+Enter sends the text to the same agent session. The Send button is disabled when the text is empty or while the text is sent.
-- The follow-up goes to the current agent of the fallback sequence.
-- For a cloud agent, the server starts a new run of that agent. The run keeps the conversation and the workspace of the agent.
-- For a local agent, the server starts the local agent again with the same model and resumes its last session.
+- The follow-up goes to the current agent: the Grok agent when it started, or else the first agent.
+- The server starts the local agent again with the same model and resumes its last session.
 - The progress shows the follow-up text as a step. Then the status is "the agent is working" again, and the page loads the progress each 3 seconds until the new run ends.
-- A failed follow-up run does not start a next agent. The status is "the agent failed", and the page removes the started resolve.
+- A failed follow-up run does not start the Grok agent. The status is "the agent failed", and the page removes the started resolve.
 - When the agent still works, the server does not send the follow-up and returns 400.
 - If the send fails, the page shows the error and keeps the text in the input.
 

@@ -293,7 +293,7 @@ export function mount(main, api) {
     resolveButton.disabled = edited || resolve !== "";
     resolveButton.textContent = resolve === "" ? "Resolve" : resolve === "starting" ? "Starting…" : "Started";
     resolveChat.hidden = resolve === "" || resolve === "starting";
-    resolveChat.textContent = `The agent ${resolve} is in the Cursor sidebar. Open https://cursor.com/agents/${resolve}. If the sidebar hides it, turn on Filter, Source, API.`;
+    resolveChat.textContent = `The local agent ${resolve} works in the project folder.`;
     const progress = behaviour.state.progress[key];
     updateProgress(card, progress);
     const started = resolve !== "" && resolve !== "starting";

@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Json;
 use axum::extract::Query;
@@ -15,18 +16,11 @@ use tokio::process::Command;
 const PROJECTS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../conf/projects.json");
 const FILE_PATH: &str = "spec/open-behaviour.json";
 const LOG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/resolve");
-const ENV_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.env");
-const API_AGENTS: &str = "https://api.cursor.com/v1/agents";
-const API_KEY_VAR: &str = "CURSOR_API_KEY";
-const AGENT_MODEL: &str = "claude-sonnet-5-5";
 const TOOL_DETAILS: [&str; 6] = ["command", "path", "pattern", "globPattern", "query", "url"];
 const LOCAL_BIN: &str = "cursor-agent";
 const LOCAL_MODEL: &str = "claude-sonnet-5-5-medium";
-const GROK_MODEL: &str = "grok-4.7";
-const GROK_LOCAL_MODEL: &str = "grok-4.7-high";
-const LOCAL_START: &str = "The cloud agent failed. A local agent resolves the item now.";
-const GROK_CLOUD_START: &str = "The local agent failed. A Grok cloud agent resolves the item now.";
-const GROK_LOCAL_START: &str = "The Grok cloud agent failed. A local Grok agent resolves the item now.";
+const GROK_MODEL: &str = "grok-4.7-high";
+const GROK_START: &str = "The local agent failed. A local Grok agent resolves the item now.";
 const FOLLOWUP_MARK: &str = "\"type\":\"followup\"";
 
 static LOCAL_LOCK: Mutex<()> = Mutex::new(());
@@ -111,7 +105,7 @@ pub async fn resolve(Json(req): Json<ResolveRequest>) -> Result<Json<ResolveStar
     }
     let projects = read_projects(Path::new(PROJECTS_FILE)).map_err(ResolveError::Failed)?;
     let (root, item) = find_item(&projects, &home, &req)?;
-    let chat = start_agent(&root, &req, &item, decision).await.map_err(ResolveError::Failed)?;
+    let chat = start_agent(&root, &req, &item, decision).map_err(ResolveError::Failed)?;
     Ok(Json(ResolveStart { chat }))
 }
 
@@ -120,13 +114,6 @@ pub async fn progress(Query(req): Query<ProgressRequest>) -> Result<Json<Progres
         return Err(ResolveError::BadItem("Bad chat id.".to_string()));
     }
     let path = Path::new(LOG_DIR).join(format!("{}.log", req.chat));
-    let log = read_log(&path);
-    if !log_has_end(last_run(&log))
-        && let Some(agent) = cloud_agent(&req.chat, &log)
-        && let Some((status, text)) = cloud_run(&agent).await
-    {
-        end_cloud_run(&path, &status, &text).map_err(ResolveError::Failed)?;
-    }
     if !path.is_file() {
         return Err(ResolveError::BadItem("The chat has no log.".to_string()));
     }
@@ -146,325 +133,83 @@ pub async fn followup(Json(req): Json<FollowupRequest>) -> Result<Json<Progress>
     if !path.is_file() {
         return Err(bad("The chat has no log."));
     }
-    let log = read_log(&path);
-    if !log_has_end(last_run(&log)) {
-        return Err(bad("The agent is still working."));
-    }
-    match stage(&log) {
-        1 => followup_local(&path, text, LOCAL_START, LOCAL_MODEL)?,
-        3 => followup_local(&path, text, GROK_LOCAL_START, GROK_LOCAL_MODEL)?,
-        _ => {
-            let agent = cloud_agent(&req.chat, &log).ok_or_else(|| bad("The chat has no cloud agent."))?;
-            followup_cloud(&agent, &path, text).await.map_err(ResolveError::Failed)?;
-        }
-    }
+    followup_local(&path, text)?;
     Ok(Json(read_progress(&read_log(&path))))
-}
-
-// the fallback order: 0 cloud Sonnet, 1 local Sonnet, 2 cloud Grok, 3 local Grok
-fn stage(log: &str) -> u8 {
-    if log.contains(GROK_LOCAL_START) {
-        3
-    } else if log.contains(GROK_CLOUD_START) {
-        2
-    } else if log.contains(LOCAL_START) {
-        1
-    } else {
-        0
-    }
-}
-
-fn cloud_agent(chat: &str, log: &str) -> Option<String> {
-    match stage(log) {
-        0 => chat.starts_with("bc-").then(|| chat.to_string()),
-        2 => log
-            .lines()
-            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-            .filter(|event| event["type"] == "agent")
-            .filter_map(|event| event["id"].as_str().map(str::to_string))
-            .rfind(|id| valid_chat(id)),
-        _ => None,
-    }
 }
 
 fn followup_line(text: &str) -> String {
     json!({ "type": "followup", "text": text }).to_string()
 }
 
-async fn followup_cloud(chat: &str, log_path: &Path, text: &str) -> Result<(), String> {
-    let key = api_key()?;
-    let created = post_json(&http()?, &key, &format!("{API_AGENTS}/{chat}/runs"), &json!({ "prompt": { "text": text } }))
-        .await
-        .map_err(|e| e.replace("failed to start the Cursor agent", "failed to send the follow-up"))?;
-    append_line(log_path, &followup_line(text))?;
-    let run = created["run"]["id"].as_str().unwrap_or("").to_string();
-    if valid_chat(&run) {
-        let chat = chat.to_string();
-        let log_path = log_path.to_path_buf();
-        tokio::spawn(async move {
-            if let Err(error) = stream_run(&key, &chat, &run, &log_path).await {
-                let error: String = safe_text(&key, &error).chars().take(300).collect();
-                let _ = append_line(&log_path, &error);
-            }
-        });
-    }
-    Ok(())
+fn failed_end(text: &str) -> String {
+    json!({ "type": "result", "is_error": true, "result": text }).to_string()
 }
 
 // the lock keeps one local agent for each chat when two follow-ups arrive at the same time
-fn followup_local(log_path: &Path, text: &str, start: &str, model: &str) -> Result<(), ResolveError> {
+fn followup_local(log_path: &Path, text: &str) -> Result<(), ResolveError> {
     let failed = |msg: String| ResolveError::Failed(msg);
     let _guard = LOCAL_LOCK.lock().map_err(|_| failed("failed to lock the local agent".to_string()))?;
     let log = read_log(log_path);
     if !log_has_end(last_run(&log)) {
         return Err(ResolveError::BadItem("The agent is still working.".to_string()));
     }
-    let session = local_session(&log, start).ok_or_else(|| failed("The local agent has no session.".to_string()))?;
+    let session = local_session(&log).ok_or_else(|| failed("The local agent has no session.".to_string()))?;
+    let model = if log.contains(GROK_START) { GROK_MODEL } else { LOCAL_MODEL };
     let root_path = log_path.with_extension("root");
     let root = fs::read_to_string(&root_path).map_err(|e| failed(format!("failed to read {}: {e}", root_path.display())))?;
     append_line(log_path, &followup_line(text)).map_err(failed)?;
     if let Err(error) = spawn_local(text, Path::new(root.trim()), log_path, model, Some(&session), false) {
         append_line(log_path, &error).map_err(failed)?;
-        append_end(log_path, &json!({ "type": "result", "is_error": true, "result": "The follow-up failed." }).to_string()).map_err(failed)?;
+        append_end(log_path, &failed_end("The follow-up failed.")).map_err(failed)?;
     }
     Ok(())
 }
 
-fn local_session(log: &str, start: &str) -> Option<String> {
-    let after_start = log.rsplit_once(start)?.1;
-    after_start
+// the session of the Grok agent is after its start line
+fn local_session(log: &str) -> Option<String> {
+    let agent_log = log.rsplit_once(GROK_START).map_or(log, |(_, rest)| rest);
+    agent_log
         .lines()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .filter_map(|event| event["session_id"].as_str().map(str::to_string))
         .rfind(|id| valid_chat(id))
 }
 
-async fn start_agent(target: &Path, req: &ResolveRequest, item: &Value, decision: &str) -> Result<String, String> {
-    let key = api_key()?;
-    let target_repo = repo_remote(target).await?;
-    let body = create_body(req, item, decision, &target_repo);
-    let created = post_json(&http()?, &key, API_AGENTS, &body).await?;
-    let chat = created["agent"]["id"]
-        .as_str()
-        .filter(|id| valid_chat(id))
-        .ok_or_else(|| "failed to start the Cursor agent: no agent id".to_string())?;
-    let run = created["run"]["id"].as_str().unwrap_or("").to_string();
-    let chat = chat.to_string();
+// when the first agent cannot start, the Grok agent starts; the start fails only when both cannot start
+fn start_agent(root: &Path, req: &ResolveRequest, item: &Value, decision: &str) -> Result<String, String> {
+    let chat = new_chat()?;
     fs::create_dir_all(LOG_DIR).map_err(|e| format!("failed to create {LOG_DIR}: {e}"))?;
     let log_path = Path::new(LOG_DIR).join(format!("{chat}.log"));
-    fs::File::create(&log_path).map_err(|e| format!("failed to create {}: {e}", log_path.display()))?;
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&log_path)
+        .map_err(|e| format!("failed to create {}: {e}", log_path.display()))?;
+    let prompt = local_prompt(req, root, item, decision);
     let prompt_path = log_path.with_extension("prompt");
-    fs::write(&prompt_path, local_prompt(req, target, item, decision)).map_err(|e| format!("failed to create {}: {e}", prompt_path.display()))?;
+    fs::write(&prompt_path, &prompt).map_err(|e| format!("failed to create {}: {e}", prompt_path.display()))?;
     let root_path = log_path.with_extension("root");
-    fs::write(&root_path, target.to_string_lossy().as_bytes()).map_err(|e| format!("failed to create {}: {e}", root_path.display()))?;
-    let body_path = log_path.with_extension("body");
-    fs::write(&body_path, body.to_string()).map_err(|e| format!("failed to create {}: {e}", body_path.display()))?;
-    if valid_chat(&run) {
-        let stream_chat = chat.clone();
-        let stream_key = key.clone();
-        tokio::spawn(async move {
-            if let Err(error) = stream_run(&stream_key, &stream_chat, &run, &log_path).await {
-                let error: String = safe_text(&stream_key, &error).chars().take(300).collect();
-                let _ = append_line(&log_path, &error);
-            }
-        });
+    fs::write(&root_path, root.to_string_lossy().as_bytes()).map_err(|e| format!("failed to create {}: {e}", root_path.display()))?;
+    if let Err(error) = spawn_local(&prompt, root, &log_path, LOCAL_MODEL, None, true) {
+        append_line(&log_path, &error)?;
+        if !start_local(&log_path, GROK_START, GROK_MODEL) {
+            return Err(error);
+        }
     }
     Ok(chat)
+}
+
+fn new_chat() -> Result<String, String> {
+    let time = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| format!("failed to read the time: {e}"))?;
+    Ok(format!("local-{}", time.as_nanos()))
 }
 
 fn valid_chat(chat: &str) -> bool {
     !chat.is_empty() && chat.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
-fn create_body(req: &ResolveRequest, item: &Value, decision: &str, target: &(String, String)) -> Value {
-    let name: String = format!("Resolve {} {} #{}", req.tab, req.spec, req.id).chars().take(100).collect();
-    json!({
-        "name": name,
-        "prompt": { "text": resolve_prompt(req, item, decision) },
-        "model": { "id": AGENT_MODEL, "params": [{ "id": "reasoning_effort", "value": "medium" }] },
-        "repos": [{ "url": target.0, "startingRef": target.1 }],
-        "autoCreatePR": false
-    })
-}
-
-async fn repo_remote(repo: &Path) -> Result<(String, String), String> {
-    let remote = git(repo, &["remote", "get-url", "origin"]).await?;
-    let url = https_repo_url(&remote)?;
-    let head = git(repo, &["rev-parse", "--abbrev-ref", "origin/HEAD"]).await?;
-    let branch = branch_name(&head);
-    if url.is_empty() || branch.is_empty() {
-        return Err(format!("failed to read the origin remote of {}", repo.display()));
-    }
-    Ok((url, branch))
-}
-
-async fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(repo)
-        .output()
-        .await
-        .map_err(|e| format!("failed to read the origin remote of {}: {e}", repo.display()))?;
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr);
-        let detail = detail.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("git failed");
-        return Err(format!("failed to read the origin remote of {}: {detail}", repo.display()));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-fn https_repo_url(remote: &str) -> Result<String, String> {
-    let remote = remote.trim().trim_end_matches('/').trim_end_matches(".git");
-    if let Some(rest) = remote.strip_prefix("git@") {
-        let Some((host, path)) = rest.split_once(':') else {
-            return Err(format!("failed to read the origin remote: {remote}"));
-        };
-        return Ok(format!("https://{host}/{path}"));
-    }
-    if let Some(rest) = remote.strip_prefix("ssh://git@") {
-        return Ok(format!("https://{rest}"));
-    }
-    if remote.starts_with("https://") || remote.starts_with("http://") {
-        return Ok(remote.to_string());
-    }
-    Err(format!("failed to read the origin remote: {remote}"))
-}
-
-fn branch_name(value: &str) -> String {
-    let value = value.trim();
-    value.strip_prefix("origin/").unwrap_or(value).to_string()
-}
-
-fn api_key() -> Result<String, String> {
-    if let Ok(value) = std::env::var(API_KEY_VAR) {
-        let value = value.trim().to_string();
-        if !value.is_empty() {
-            return Ok(value);
-        }
-    }
-    if let Ok(text) = fs::read_to_string(ENV_FILE)
-        && let Some(value) = env_file_value(&text, API_KEY_VAR)
-    {
-        return Ok(value);
-    }
-    Err(format!("{API_KEY_VAR} is not set."))
-}
-
-fn env_file_value(text: &str, name: &str) -> Option<String> {
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let line = line.strip_prefix("export ").unwrap_or(line);
-        let Some((key, value)) = line.split_once('=') else { continue };
-        if key.trim() != name {
-            continue;
-        }
-        let value = unquote(value.trim());
-        if !value.is_empty() {
-            return Some(value);
-        }
-    }
-    None
-}
-
-fn unquote(value: &str) -> String {
-    let bytes = value.as_bytes();
-    if bytes.len() >= 2 && (bytes[0] == b'"' || bytes[0] == b'\'') && bytes[0] == bytes[bytes.len() - 1] {
-        return value[1..value.len() - 1].to_string();
-    }
-    value.to_string()
-}
-
-fn http() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| format!("failed to start the Cursor agent: {e}"))
-}
-
-async fn post_json(client: &reqwest::Client, key: &str, url: &str, body: &Value) -> Result<Value, String> {
-    let response = client
-        .post(url)
-        .bearer_auth(key)
-        .json(body)
-        .send()
-        .await
-        .map_err(|e| api_fail(key, &e.to_string()))?;
-    let status = response.status();
-    let text = response.text().await.map_err(|e| api_fail(key, &e.to_string()))?;
-    if !status.is_success() {
-        return Err(api_fail(key, &format!("{status} {}", api_message(&text))));
-    }
-    serde_json::from_str(&text).map_err(|_| "failed to start the Cursor agent: bad response".to_string())
-}
-
-async fn get_json(client: &reqwest::Client, key: &str, url: &str) -> Result<Value, String> {
-    let response = client.get(url).bearer_auth(key).send().await.map_err(|e| e.to_string())?;
-    let status = response.status();
-    let text = response.text().await.map_err(|e| e.to_string())?;
-    if !status.is_success() {
-        return Err(status.to_string());
-    }
-    serde_json::from_str(&text).map_err(|_| "bad response".to_string())
-}
-
-fn api_message(body: &str) -> String {
-    let Ok(value) = serde_json::from_str::<Value>(body) else {
-        return String::new();
-    };
-    let message = value["error"]["message"].as_str().or_else(|| value["message"].as_str()).unwrap_or("");
-    message.chars().take(300).collect()
-}
-
-fn api_fail(key: &str, detail: &str) -> String {
-    format!("failed to start the Cursor agent: {}", safe_text(key, detail))
-}
-
-fn safe_text(key: &str, text: &str) -> String {
-    if key.is_empty() { text.to_string() } else { text.replace(key, "***") }
-}
-
-async fn cloud_run(chat: &str) -> Option<(String, String)> {
-    let key = api_key().ok()?;
-    let client = http().ok()?;
-    let agent = get_json(&client, &key, &format!("{API_AGENTS}/{chat}")).await.ok()?;
-    let run_id = agent["latestRunId"].as_str()?;
-    if !valid_chat(run_id) {
-        return None;
-    }
-    let run = get_json(&client, &key, &format!("{API_AGENTS}/{chat}/runs/{run_id}")).await.ok()?;
-    Some((run["status"].as_str().unwrap_or("").to_string(), run["result"].as_str().unwrap_or("").to_string()))
-}
-
-// a failed follow-up ends the log, because the local agent has no conversation of the cloud agent
-// the stream and the progress route can both end one run, so a run end in a local stage is from an earlier cloud stage
-fn end_cloud_run(log_path: &Path, status: &str, text: &str) -> Result<(), String> {
-    let log = read_log(log_path);
-    if matches!(stage(&log), 1 | 3) {
-        return Ok(());
-    }
-    if status == "ERROR" && !log.contains(FOLLOWUP_MARK) {
-        match stage(&log) {
-            0 => {
-                if !start_local(log_path, LOCAL_START, LOCAL_MODEL, true) {
-                    start_grok_cloud(log_path);
-                }
-                return Ok(());
-            }
-            2 if start_local(log_path, GROK_LOCAL_START, GROK_LOCAL_MODEL, false) => return Ok(()),
-            _ => {}
-        }
-    }
-    match end_line(status, text) {
-        Some(line) => append_end(log_path, &line),
-        None => Ok(()),
-    }
-}
-
 // the lock and the start line in the log keep one agent for each stage, also after a server restart
-fn start_local(log_path: &Path, start: &str, model: &str, fallback: bool) -> bool {
+fn start_local(log_path: &Path, start: &str, model: &str) -> bool {
     let Ok(_guard) = LOCAL_LOCK.lock() else { return false };
     if read_log(log_path).contains(start) {
         return true;
@@ -474,7 +219,7 @@ fn start_local(log_path: &Path, start: &str, model: &str, fallback: bool) -> boo
     }
     let Ok(prompt) = fs::read_to_string(log_path.with_extension("prompt")) else { return false };
     let Ok(root) = fs::read_to_string(log_path.with_extension("root")) else { return false };
-    match spawn_local(&prompt, Path::new(root.trim()), log_path, model, None, fallback) {
+    match spawn_local(&prompt, Path::new(root.trim()), log_path, model, None, false) {
         Ok(()) => true,
         Err(error) => {
             let _ = append_line(log_path, &error);
@@ -483,61 +228,8 @@ fn start_local(log_path: &Path, start: &str, model: &str, fallback: bool) -> boo
     }
 }
 
-// the start line comes first, so a failed start of the Grok agents ends the log in the Grok stage
-fn start_grok_cloud(log_path: &Path) {
-    let body = {
-        let _guard = LOCAL_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        if read_log(log_path).contains(GROK_CLOUD_START) || append_line(log_path, GROK_CLOUD_START).is_err() {
-            return;
-        }
-        let body_path = log_path.with_extension("body");
-        fs::read_to_string(&body_path)
-            .map_err(|e| format!("failed to read {}: {e}", body_path.display()))
-            .and_then(|text| serde_json::from_str::<Value>(&text).map_err(|e| format!("failed to parse {}: {e}", body_path.display())))
-    };
-    let body = match body {
-        Ok(body) => body,
-        Err(error) => return start_grok_local(log_path, &error),
-    };
-    let log_path = log_path.to_path_buf();
-    tokio::spawn(async move {
-        if let Err(error) = run_grok_cloud(&log_path, body).await {
-            start_grok_local(&log_path, &error);
-        }
-    });
-}
-
-fn start_grok_local(log_path: &Path, error: &str) {
-    let _ = append_line(log_path, error);
-    if !start_local(log_path, GROK_LOCAL_START, GROK_LOCAL_MODEL, false)
-        && let Some(line) = end_line("ERROR", "")
-    {
-        let _ = append_end(log_path, &line);
-    }
-}
-
-async fn run_grok_cloud(log_path: &Path, mut body: Value) -> Result<(), String> {
-    body["model"] = json!({ "id": GROK_MODEL, "params": [{ "id": "reasoning_effort", "value": "high" }] });
-    let key = api_key()?;
-    let created = post_json(&http()?, &key, API_AGENTS, &body).await?;
-    let agent = created["agent"]["id"]
-        .as_str()
-        .filter(|id| valid_chat(id))
-        .ok_or_else(|| "failed to start the Cursor agent: no agent id".to_string())?
-        .to_string();
-    append_line(log_path, &json!({ "type": "agent", "id": agent }).to_string())?;
-    let run = created["run"]["id"].as_str().unwrap_or("");
-    if valid_chat(run)
-        && let Err(error) = stream_run(&key, &agent, run, log_path).await
-    {
-        let error: String = safe_text(&key, &error).chars().take(300).collect();
-        append_line(log_path, &error)?;
-    }
-    Ok(())
-}
-
 // a session id resumes the conversation of an earlier local agent
-// fallback starts the Grok cloud agent when this local agent fails
+// fallback starts the Grok agent when this agent fails
 fn spawn_local(prompt: &str, root: &Path, log_path: &Path, model: &str, session: Option<&str>, fallback: bool) -> Result<(), String> {
     let root = fs::canonicalize(root).map_err(|e| format!("failed to open {}: {e}", root.display()))?;
     let log = fs::OpenOptions::new().append(true).open(log_path).map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
@@ -563,12 +255,19 @@ fn spawn_local(prompt: &str, root: &Path, log_path: &Path, model: &str, session:
     tokio::spawn(async move {
         let code = child.wait().await.ok().and_then(|status| status.code());
         let _ = append_line(&log_path, &json!({ "type": "exit", "code": code }).to_string());
-        let log = read_log(&log_path);
-        if fallback && !log.contains(FOLLOWUP_MARK) && local_failed(last_run(&log)) {
-            start_grok_cloud(&log_path);
+        if fallback {
+            start_grok_after_fail(&log_path);
         }
     });
     Ok(())
+}
+
+// a follow-up run does not start the Grok agent
+fn start_grok_after_fail(log_path: &Path) {
+    let log = read_log(log_path);
+    if !log.contains(FOLLOWUP_MARK) && local_failed(last_run(&log)) && !start_local(log_path, GROK_START, GROK_MODEL) {
+        let _ = append_end(log_path, &failed_end("The agent failed."));
+    }
 }
 
 // the first end of the run tells: a failed result, or an exit with an error code before a result
@@ -583,105 +282,6 @@ fn local_failed(run: &str) -> bool {
     false
 }
 
-fn end_line(status: &str, text: &str) -> Option<String> {
-    let text = if status == "ERROR" && text.is_empty() { "The agent failed." } else { text };
-    match status {
-        "FINISHED" => Some(json!({ "type": "result", "is_error": false, "result": text }).to_string()),
-        "ERROR" => Some(json!({ "type": "result", "is_error": true, "result": text }).to_string()),
-        "CANCELLED" | "EXPIRED" => Some(json!({ "type": "exit", "code": null }).to_string()),
-        _ => None,
-    }
-}
-
-async fn stream_run(key: &str, chat: &str, run: &str, log_path: &Path) -> Result<(), String> {
-    let response = reqwest::Client::new()
-        .get(format!("{API_AGENTS}/{chat}/runs/{run}/stream"))
-        .bearer_auth(key)
-        .header("Accept", "text/event-stream")
-        .send()
-        .await
-        .map_err(|e| format!("failed to read the progress stream: {e}"))?;
-    if !response.status().is_success() {
-        return Err(format!("failed to read the progress stream: {}", response.status()));
-    }
-    let mut response = response;
-    let mut pending = String::new();
-    let mut assistant = String::new();
-    while let Some(chunk) = response.chunk().await.map_err(|e| format!("failed to read the progress stream: {e}"))? {
-        pending.push_str(&String::from_utf8_lossy(&chunk));
-        pending = pending.replace("\r\n", "\n");
-        while let Some(at) = pending.find("\n\n") {
-            let block = pending[..at].to_string();
-            pending.drain(..at + 2);
-            apply_stream_block(&block, log_path, &mut assistant)?;
-        }
-    }
-    flush_assistant(log_path, &mut assistant)
-}
-
-fn apply_stream_block(block: &str, log_path: &Path, assistant: &mut String) -> Result<(), String> {
-    let (event, data) = sse_parts(block);
-    let Some(event) = event else { return Ok(()) };
-    let value: Value = serde_json::from_str(&data).unwrap_or(Value::Null);
-    match event {
-        "assistant" => {
-            if let Some(text) = value["text"].as_str() {
-                assistant.push_str(text);
-            }
-        }
-        "tool_call" if value["status"] == "running" => {
-            flush_assistant(log_path, assistant)?;
-            let text = cloud_tool_text(&value);
-            append_line(log_path, &json!({ "type": "tool_call", "subtype": "started", "tool_call": { "function": { "name": text } } }).to_string())?;
-        }
-        "result" => {
-            flush_assistant(log_path, assistant)?;
-            end_cloud_run(log_path, value["status"].as_str().unwrap_or(""), value["text"].as_str().unwrap_or(""))?;
-        }
-        "error" => {
-            flush_assistant(log_path, assistant)?;
-            if let Some(message) = value["message"].as_str() {
-                append_line(log_path, message)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn sse_parts(block: &str) -> (Option<&str>, String) {
-    let mut event = None;
-    let mut data = String::new();
-    for line in block.lines() {
-        if let Some(rest) = line.strip_prefix("event:") {
-            event = Some(rest.trim());
-        } else if let Some(rest) = line.strip_prefix("data:") {
-            if !data.is_empty() {
-                data.push('\n');
-            }
-            data.push_str(rest.trim_start());
-        }
-    }
-    (event, data)
-}
-
-fn cloud_tool_text(data: &Value) -> String {
-    let name = data["name"].as_str().unwrap_or("tool");
-    match TOOL_DETAILS.iter().find_map(|field| data["args"][*field].as_str()) {
-        Some(detail) => format!("{name}: {detail}"),
-        None => name.to_string(),
-    }
-}
-
-fn flush_assistant(log_path: &Path, assistant: &mut String) -> Result<(), String> {
-    let text = assistant.trim().to_string();
-    assistant.clear();
-    if text.is_empty() {
-        return Ok(());
-    }
-    append_line(log_path, &json!({ "type": "assistant", "message": { "content": [{ "type": "text", "text": text }] } }).to_string())
-}
-
 fn read_log(path: &Path) -> String {
     fs::read_to_string(path).unwrap_or_default()
 }
@@ -690,9 +290,9 @@ fn log_has_end(log: &str) -> bool {
     log.contains("\"type\":\"result\"") || log.contains("\"type\": \"result\"") || log.contains("\"type\":\"exit\"") || log.contains("\"type\": \"exit\"")
 }
 
-// a follow-up and each fallback start a new run, so only the lines after the last start tell if the agent ended
+// a follow-up and the Grok agent start a new run, so only the lines after the last start tell if the agent ended
 fn last_run(log: &str) -> &str {
-    let starts = [FOLLOWUP_MARK, LOCAL_START, GROK_CLOUD_START, GROK_LOCAL_START];
+    let starts = [FOLLOWUP_MARK, GROK_START];
     match starts.iter().filter_map(|start| log.rfind(start)).max() {
         Some(at) => log[at..].split_once('\n').map_or("", |(_, rest)| rest),
         None => log,
@@ -712,16 +312,16 @@ fn append_line(path: &Path, line: &str) -> Result<(), String> {
 }
 
 // a line that is not JSON is stderr text of the agent
-// the local Sonnet agent writes its own failed end, so that end waits for the Grok cloud agent
+// the first agent writes its own failed end, so that end waits for the Grok agent
 fn read_progress(log: &str) -> Progress {
     let mut status = "running";
     let mut steps = Vec::new();
-    let mut waits_grok = false;
+    let mut waits_grok = true;
     let mut local_failed = false;
     for line in log.lines().map(str::trim).filter(|line| !line.is_empty()) {
-        if [LOCAL_START, GROK_CLOUD_START, GROK_LOCAL_START].contains(&line) {
+        if line == GROK_START {
             status = "running";
-            waits_grok = line == LOCAL_START;
+            waits_grok = false;
             local_failed = false;
         }
         let Ok(event) = serde_json::from_str::<Value>(line) else {
@@ -740,10 +340,6 @@ fn read_progress(log: &str) -> Progress {
                 status = "running";
                 waits_grok = false;
                 steps.push(Step { kind: "reply", text: event["text"].as_str().unwrap_or("").to_string() });
-            }
-            (Some("agent"), _) => {
-                let id = event["id"].as_str().unwrap_or("");
-                steps.push(Step { kind: "output", text: format!("The Grok cloud agent is https://cursor.com/agents/{id}.") });
             }
             (Some("result"), _) if event["is_error"] == true => {
                 if waits_grok {
@@ -816,25 +412,6 @@ fn find_item(projects: &Map<String, Value>, home: &str, req: &ResolveRequest) ->
         .find(|item| item["id"].as_u64() == Some(req.id))
         .ok_or_else(|| bad("Unknown item."))?;
     Ok((root, item.clone()))
-}
-
-fn resolve_prompt(req: &ResolveRequest, item: &Value, decision: &str) -> String {
-    let item = serde_json::to_string_pretty(item).unwrap_or_default();
-    format!(
-        "Resolve one open-behaviour item.\n\n\
-         - File: `{FILE_PATH}`\n\
-         - Spec: `{spec}`\n\
-         - Item: #{id}\n\
-         - Project: `{tab}`\n\n\
-         The item:\n\n```json\n{item}\n```\n\n\
-         The final decision of the user:\n\n{decision}\n\n\
-         Resolve the item as the final decision tells. Change the code and `{FILE_PATH}` in the same change. \
-         When the item is resolved, remove the whole item #{id} object from the `items` list of the `{spec}` entry \
-         in `{FILE_PATH}`. Do not keep the item with a resolved status or a note.",
-        spec = req.spec,
-        id = req.id,
-        tab = req.tab,
-    )
 }
 
 fn local_prompt(req: &ResolveRequest, root: &Path, item: &Value, decision: &str) -> String {
@@ -997,78 +574,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_prompt_has_the_item_and_the_decision() {
-        let req = resolve_request("my-app", "web/01_login", 3);
-        let prompt = resolve_prompt(&req, &json!({ "id": 3 }), "Use option 1.");
-        for part in [
-            "`my-app`",
-            "`spec/open-behaviour.json`",
-            "`web/01_login`",
-            "#3",
-            "\"id\": 3",
-            "Use option 1.",
-            "remove the whole item #3 object from the `items` list of the `web/01_login` entry",
-        ] {
-            assert!(prompt.contains(part), "{part}");
-        }
-        assert!(!prompt.contains("AGENTS.md"));
-    }
-
-    #[test]
-    fn create_body_sends_only_the_target_repo() {
-        let req = resolve_request("my-app", "web/01_login", 3);
-        let body = create_body(&req, &json!({ "id": 3 }), "Use option 1.", &("https://github.com/acme/my-app".to_string(), "main".to_string()));
-        assert_eq!(body["repos"], json!([{ "url": "https://github.com/acme/my-app", "startingRef": "main" }]));
-        assert_eq!(body["model"]["id"], AGENT_MODEL);
-        assert_eq!(body["model"]["params"][0]["id"], "reasoning_effort");
-        assert_eq!(body["model"]["params"][0]["value"], "medium");
-        assert_eq!(body["autoCreatePR"], false);
-        assert!(body.get("customSubagents").is_none());
-    }
-
-    #[test]
-    fn https_repo_url_accepts_git_and_https_remotes() {
-        assert_eq!(https_repo_url("git@github.com:acme/my-app.git").unwrap(), "https://github.com/acme/my-app");
-        assert_eq!(https_repo_url("https://github.com/acme/my-app.git").unwrap(), "https://github.com/acme/my-app");
-        assert_eq!(https_repo_url("ssh://git@github.com/acme/my-app.git").unwrap(), "https://github.com/acme/my-app");
-        assert!(https_repo_url("acme/my-app").is_err());
-    }
-
-    #[test]
-    fn end_line_maps_the_cloud_run_status() {
-        assert!(end_line("RUNNING", "").is_none());
-        assert_eq!(end_line("FINISHED", "Done.").unwrap(), r#"{"type":"result","is_error":false,"result":"Done."}"#);
-        assert!(end_line("ERROR", "").unwrap().contains("The agent failed."));
-        assert_eq!(end_line("CANCELLED", "").unwrap(), r#"{"type":"exit","code":null}"#);
-    }
-
-    #[test]
-    fn end_cloud_run_ends_the_log_when_no_local_agent_can_start() {
-        let dir = temp_home("cloud-end");
-        let failed = dir.join("bc-1.log");
-        write(&failed, "");
-        end_cloud_run(&failed, "ERROR", "").unwrap();
-        assert_eq!(read_progress(&read_log(&failed)).status, "failed");
-
-        let finished = dir.join("bc-2.log");
-        write(&finished, "");
-        write(&finished.with_extension("prompt"), "Resolve it.");
-        end_cloud_run(&finished, "FINISHED", "Done.").unwrap();
-        assert_eq!(read_progress(&read_log(&finished)).status, "finished");
-    }
-
-    #[test]
-    fn end_cloud_run_keeps_a_started_local_agent() {
-        let dir = temp_home("cloud-local");
-        let log = dir.join("bc-1.log");
-        write(&log, &format!("{LOCAL_START}\n"));
-        write(&log.with_extension("prompt"), "Resolve it.");
-        end_cloud_run(&log, "ERROR", "").unwrap();
-        let progress = read_progress(&read_log(&log));
-        assert_eq!(progress, Progress { status: "running", steps: vec![step("output", LOCAL_START)] });
-    }
-
-    #[test]
     fn local_prompt_has_the_project_path_and_the_decision() {
         let req = resolve_request("my-app", "web/01_login", 3);
         let prompt = local_prompt(&req, Path::new("/code/my-app"), &json!({ "id": 3 }), "Use option 1.");
@@ -1087,28 +592,8 @@ mod tests {
     }
 
     #[test]
-    fn env_file_value_reads_one_named_value() {
-        let text = "OTHER=secret\n# CURSOR_API_KEY=no\nexport CURSOR_API_KEY=\"cursor_test\"\n";
-        assert_eq!(env_file_value(text, "CURSOR_API_KEY").as_deref(), Some("cursor_test"));
-        assert_eq!(env_file_value("CURSOR_API_KEY=\n", "CURSOR_API_KEY"), None);
-    }
-
-    #[tokio::test]
-    async fn repo_remote_reads_origin() {
-        let dir = temp_home("remote");
-        git_ok(&dir, &["init", "-b", "main", "--template="]);
-        git_ok(&dir, &["remote", "add", "origin", "git@github.com:acme/my-app.git"]);
-        git_ok(&dir, &["-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "--allow-empty", "-m", "init"]);
-        git_ok(&dir, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
-        git_ok(&dir, &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
-        let (url, branch) = repo_remote(&dir).await.unwrap();
-        assert_eq!(url, "https://github.com/acme/my-app");
-        assert_eq!(branch, "main");
-    }
-
-    fn git_ok(dir: &Path, args: &[&str]) {
-        let status = std::process::Command::new("git").args(args).current_dir(dir).status().unwrap();
-        assert!(status.success(), "{args:?}");
+    fn new_chat_is_a_valid_chat_id() {
+        assert!(valid_chat(&new_chat().unwrap()));
     }
 
     fn step(kind: &'static str, text: &str) -> Step {
@@ -1141,8 +626,8 @@ mod tests {
         assert_eq!(read_progress("{\"type\":\"result\",\"is_error\":false}\n{\"type\":\"exit\",\"code\":0}").status, "finished");
         assert_eq!(read_progress(r#"{"type":"exit","code":null}"#).status, "stopped");
 
-        let failed = read_progress(r#"{"type":"result","is_error":true,"result":"Model error."}"#);
-        assert_eq!(failed, Progress { status: "failed", steps: vec![step("output", "Model error.")] });
+        let failed = read_progress(&format!("{GROK_START}\n{}", r#"{"type":"result","is_error":true,"result":"Model error."}"#));
+        assert_eq!(failed, Progress { status: "failed", steps: vec![step("output", GROK_START), step("output", "Model error.")] });
     }
 
     #[test]
@@ -1158,68 +643,54 @@ mod tests {
     }
 
     #[test]
-    fn end_cloud_run_of_a_follow_up_starts_no_local_agent() {
-        let dir = temp_home("cloud-followup");
-        let log = dir.join("bc-1.log");
-        write(&log, &format!("{}\n{}\n", r#"{"type":"result","is_error":false,"result":"Done."}"#, followup_line("More.")));
-        write(&log.with_extension("prompt"), "Resolve it.");
-        write(&log.with_extension("root"), dir.to_str().unwrap());
-        end_cloud_run(&log, "ERROR", "").unwrap();
-        let text = read_log(&log);
-        assert!(!text.contains(LOCAL_START));
-        assert_eq!(read_progress(&text).status, "failed");
-    }
+    fn read_progress_waits_for_grok_after_the_first_agent_fails() {
+        let failed_first = [r#"{"type":"result","is_error":true,"result":"Model error."}"#, r#"{"type":"exit","code":1}"#].join("\n");
+        assert_eq!(read_progress(&failed_first).status, "running");
+        assert_eq!(read_progress(r#"{"type":"exit","code":2}"#).status, "running");
 
-    #[test]
-    fn local_session_reads_the_last_session_of_the_local_agent() {
-        let log = [
-            r#"{"type":"system","session_id":"cloud-x"}"#,
-            LOCAL_START,
-            r#"{"type":"system","subtype":"init","session_id":"s-1"}"#,
-            r#"{"type":"result","is_error":false,"session_id":"s-2"}"#,
-        ]
-        .join("\n");
-        assert_eq!(local_session(&log, LOCAL_START).as_deref(), Some("s-2"));
-        assert_eq!(local_session(r#"{"type":"system","session_id":"s-1"}"#, LOCAL_START), None);
-    }
+        let grok = format!("{failed_first}\n{GROK_START}");
+        assert_eq!(read_progress(&grok).status, "running");
+        assert_eq!(last_run(&grok), "");
 
-    #[test]
-    fn end_cloud_run_tries_each_fallback_in_order() {
-        let dir = temp_home("cloud-chain");
-        let log = dir.join("bc-1.log");
-        write(&log, "");
-        end_cloud_run(&log, "ERROR", "").unwrap();
-        let text = read_log(&log);
-        let starts: Vec<usize> = [LOCAL_START, GROK_CLOUD_START, GROK_LOCAL_START].iter().map(|start| text.find(start).unwrap()).collect();
-        assert!(starts.is_sorted(), "{text}");
-        assert!(text.contains("bc-1.body"));
-        assert_eq!(read_progress(&text).status, "failed");
-    }
-
-    #[test]
-    fn read_progress_waits_for_grok_after_the_local_agent_fails() {
-        let failed_local = [LOCAL_START, r#"{"type":"result","is_error":true,"result":"Model error."}"#, r#"{"type":"exit","code":1}"#].join("\n");
-        assert_eq!(read_progress(&failed_local).status, "running");
-        assert_eq!(read_progress(&format!("{LOCAL_START}\n{{\"type\":\"exit\",\"code\":2}}")).status, "running");
-        assert_eq!(read_progress(&format!("{LOCAL_START}\n{{\"type\":\"exit\",\"code\":null}}")).status, "stopped");
-
-        let grok = format!("{failed_local}\n{GROK_CLOUD_START}\n{}", r#"{"type":"agent","id":"bc-2"}"#);
-        let progress = read_progress(&grok);
-        assert_eq!(progress.status, "running");
-        assert_eq!(progress.steps.last().unwrap(), &step("output", "The Grok cloud agent is https://cursor.com/agents/bc-2."));
-
-        let grok_failed = format!("{grok}\n{GROK_LOCAL_START}\n{}", r#"{"type":"result","is_error":true,"result":"Grok error."}"#);
+        let grok_failed = format!("{grok}\n{}", r#"{"type":"result","is_error":true,"result":"Grok error."}"#);
         assert_eq!(read_progress(&grok_failed).status, "failed");
     }
 
     #[test]
-    fn cloud_agent_gives_the_agent_of_the_cloud_stage() {
-        assert_eq!(cloud_agent("bc-1", "").as_deref(), Some("bc-1"));
-        assert_eq!(cloud_agent("bc-1", LOCAL_START), None);
-        let grok = format!("{LOCAL_START}\n{GROK_CLOUD_START}\n{}", r#"{"type":"agent","id":"bc-2"}"#);
-        assert_eq!(cloud_agent("bc-1", &grok).as_deref(), Some("bc-2"));
-        assert_eq!(cloud_agent("bc-1", &format!("{grok}\n{GROK_LOCAL_START}")), None);
-        assert_eq!(last_run(&grok), r#"{"type":"agent","id":"bc-2"}"#);
+    fn a_failed_grok_start_ends_the_log() {
+        let dir = temp_home("grok-start");
+        let log = dir.join("local-1.log");
+        write(&log, "{\"type\":\"result\",\"is_error\":true}\n{\"type\":\"exit\",\"code\":1}\n");
+        start_grok_after_fail(&log);
+        let text = read_log(&log);
+        assert!(text.contains(GROK_START), "{text}");
+        assert_eq!(read_progress(&text).status, "failed");
+    }
+
+    #[test]
+    fn a_failed_follow_up_starts_no_grok_agent() {
+        let dir = temp_home("grok-followup");
+        let log = dir.join("local-1.log");
+        let ended = [
+            r#"{"type":"result","is_error":false,"result":"Done."}"#.to_string(),
+            followup_line("More."),
+            r#"{"type":"result","is_error":true,"result":"Model error."}"#.to_string(),
+        ]
+        .join("\n");
+        write(&log, &format!("{ended}\n"));
+        start_grok_after_fail(&log);
+        let text = read_log(&log);
+        assert!(!text.contains(GROK_START));
+        assert_eq!(read_progress(&text).status, "failed");
+    }
+
+    #[test]
+    fn local_session_reads_the_last_session_of_the_current_agent() {
+        let first = [r#"{"type":"system","subtype":"init","session_id":"s-1"}"#, r#"{"type":"result","is_error":false,"session_id":"s-2"}"#].join("\n");
+        assert_eq!(local_session(&first).as_deref(), Some("s-2"));
+        assert_eq!(local_session(&format!("{first}\n{GROK_START}")), None);
+        let grok = format!("{first}\n{GROK_START}\n{}", r#"{"type":"system","session_id":"g-1"}"#);
+        assert_eq!(local_session(&grok).as_deref(), Some("g-1"));
     }
 
     #[test]
@@ -1232,7 +703,10 @@ mod tests {
 
     #[test]
     fn read_progress_keeps_a_line_that_is_not_json() {
-        let progress = read_progress("Error: not logged in\n\n{\"type\":\"exit\",\"code\":1}");
-        assert_eq!(progress, Progress { status: "stopped", steps: vec![step("output", "Error: not logged in")] });
+        let progress = read_progress(&format!("{GROK_START}\nError: not logged in\n\n{{\"type\":\"exit\",\"code\":1}}"));
+        assert_eq!(
+            progress,
+            Progress { status: "stopped", steps: vec![step("output", GROK_START), step("output", "Error: not logged in")] }
+        );
     }
 }
