@@ -48,6 +48,7 @@ Each item is one card. The card has these parts, in this order:
 - The agent runs without a person. It can edit files and run commands without approval.
 - The agent continues when the page closes or the server restarts.
 - After the start, the button shows "Started" and stays disabled. The card shows the cloud agent id and the agent URL. The agent is in the Cursor agents sidebar. The sidebar shows the agent when the source filter includes API. A reload keeps this state.
+- When the progress gives the status "the agent failed", the page removes the started resolve. The button shows "Resolve" again, and the card still shows the progress of the failed agent. A new click starts a new agent. An agent that stopped, or a progress that cannot be loaded, keeps the "Started" state.
 - Under the agent id, the card shows the progress of the agent: the status, each tool that the agent starts, and each message of the agent. The page loads the progress each 3 seconds while the agent works.
 - The status is one of these: the agent is working, the agent finished, the agent failed, or the agent stopped before it finished. When the status is not "working", the page does not load the progress again.
 - An error text of the agent shows as a step of the progress.
@@ -67,6 +68,7 @@ Each item is one card. The card has these parts, in this order:
 - When the page opens, it loads `open-behaviour-resolves` with `GET /page`.
 - The page loads the progress of a started resolve with `GET /open-behaviour-progress`. The progress is not in the DB.
 - A resolve is saved only after the start is successful. The page does not save the value `starting`.
+- When an agent fails, the page writes the started resolves without that item with `PUT /page`.
 - If a save of the resolves fails, the page shows the error and keeps the last saved resolves.
 - If the file of a project cannot be read or parsed, the tab of that project shows the error. The other tabs still show their items.
 - If a save fails, the page shows the error and keeps the last saved decisions.

@@ -217,6 +217,50 @@ describe("refreshProgress", () => {
     assert.deepEqual(fake.progressLoads, []);
   });
 
+  it("removes the saved resolve of a failed agent and keeps its progress", async () => {
+    const FAILED = { status: "failed", steps: [{ kind: "output", text: "The agent failed." }] };
+    const started = { [KEY]: "chat_9", "my-app/01_login/2": "chat_8" };
+    const fake = fakeApi(null, TABS, started, { chat_9: FAILED, chat_8: RUNNING });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.refreshProgress();
+    assert.deepEqual(behaviour.state.resolves, { "my-app/01_login/2": "chat_8" });
+    assert.deepEqual(fake.saves, [{ name: "open-behaviour-resolves", data: { "my-app/01_login/2": "chat_8" } }]);
+    assert.deepEqual(behaviour.state.progress[KEY], FAILED);
+  });
+
+  it("keeps the resolve of a failed agent when the save fails", async () => {
+    const fake = fakeApi(null, TABS, { [KEY]: "chat_9" }, { chat_9: { status: "failed", steps: [] } });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    fake.failSaves();
+    await behaviour.refreshProgress();
+    assert.deepEqual(behaviour.state.resolves, { [KEY]: "chat_9" });
+    assert.equal(behaviour.state.error, "Failed to save: db down");
+  });
+
+  it("does not remove the resolve of a stopped agent or a failed progress load", async () => {
+    const started = { [KEY]: "chat_9", "my-app/01_login/2": "chat_7" };
+    const fake = fakeApi(null, TABS, started, { chat_9: { status: "stopped", steps: [] } });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.refreshProgress();
+    assert.deepEqual(behaviour.state.resolves, started);
+    assert.deepEqual(fake.saves, []);
+  });
+
+  it("loads the progress of the new agent after a failed agent", async () => {
+    const tab = TABS[0];
+    const fake = fakeApi({ [KEY]: "a" }, TABS, { [KEY]: "chat_9" }, { chat_9: { status: "failed", steps: [] }, chat_1: RUNNING });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.refreshProgress();
+    await behaviour.resolve(tab, tab.groups[0], tab.groups[0].items[0]);
+    await behaviour.refreshProgress();
+    assert.deepEqual(behaviour.state.resolves, { [KEY]: "chat_1" });
+    assert.deepEqual(behaviour.state.progress[KEY], RUNNING);
+  });
+
   it("keeps the error of a failed load and does not load it again", async () => {
     const fake = fakeApi(null, TABS, { [KEY]: "chat_9" });
     const behaviour = createOpenBehaviour(fake.api);

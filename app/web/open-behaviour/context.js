@@ -79,6 +79,8 @@ export function createOpenBehaviour(api, onChange = () => {}) {
     const decision = state.decisions[key];
     if (!decision || state.resolves[key]) return;
     state.resolves = { ...state.resolves, [key]: "starting" };
+    const { [key]: _ended, ...progress } = state.progress;
+    state.progress = progress;
     onChange();
     let chat;
     try {
@@ -124,8 +126,19 @@ export function createOpenBehaviour(api, onChange = () => {}) {
         }
       }),
     );
-    refreshing = false;
     state.progress = { ...state.progress, ...Object.fromEntries(loaded) };
+    // a failed agent leaves the item as it was, so the user can start it again
+    const failed = loaded.filter(([, progress]) => progress.status === "failed").map(([key]) => key);
+    if (failed.length > 0) {
+      const remove = (resolves) => Object.fromEntries(Object.entries(resolves).filter(([key]) => !failed.includes(key)));
+      try {
+        await api.savePage(RESOLVES_PAGE, savedResolves(remove(state.resolves)));
+        state.resolves = remove(state.resolves);
+      } catch (e) {
+        state.error = `Failed to save: ${e.message}`;
+      }
+    }
+    refreshing = false;
     onChange();
   }
 
