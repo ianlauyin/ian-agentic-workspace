@@ -3,6 +3,7 @@ import { createOpenBehaviour, decisionKey, groupsByStatus, withKind } from "./co
 const CSS = "/open-behaviour/index.css";
 const KINDS = { bug: "Bug", decision: "Needs decision", cleanup: "Cleanup" };
 const PROGRESS_MS = 3000;
+const REPLY_STATUS = ["finished", "stopped"];
 const PROGRESS_STATUS = {
   running: "The agent is working.",
   finished: "The agent finished.",
@@ -183,6 +184,12 @@ export function mount(main, api) {
       <div class="resolve-progress" hidden>
         <p class="state"></p>
         <ol class="steps"></ol>
+        <form class="followup-form" hidden>
+          <label>Follow-up
+            <textarea class="g-text-input" rows="2" placeholder="Reply to the agent"></textarea>
+          </label>
+          <button class="g-button" type="submit" disabled>Send</button>
+        </form>
       </div>`;
     view.querySelector(".num").textContent = `#${item.id}`;
     appendText(view.querySelector("h3"), item.item);
@@ -230,7 +237,10 @@ export function mount(main, api) {
     });
     resolveButton.addEventListener("click", () => void behaviour.resolve(tab, group, item));
 
-    return {
+    const followupForm = view.querySelector(".followup-form");
+    const followupInput = followupForm.querySelector("textarea");
+    const followupButton = followupForm.querySelector("button");
+    const card = {
       view,
       kind: item.kind,
       input,
@@ -238,9 +248,28 @@ export function mount(main, api) {
       resolveButton,
       resolveChat: view.querySelector(".resolve-chat"),
       resolveProgress: view.querySelector(".resolve-progress"),
+      followupForm,
+      followupInput,
+      followupButton,
+      sending: false,
       status: view.querySelector(".status"),
       shownProgress: null,
     };
+    followupInput.addEventListener("input", () => updateCard(key));
+    followupInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) followupForm.requestSubmit();
+    });
+    followupForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (card.sending || !followupInput.value.trim()) return;
+      card.sending = true;
+      updateCard(key);
+      const sent = await behaviour.followup(key, followupInput.value);
+      card.sending = false;
+      if (sent) followupInput.value = "";
+      updateCard(key);
+    });
+    return card;
   }
 
   // the steps are built again only when a step or the status is new, so the scroll stays when nothing changes
@@ -278,7 +307,12 @@ export function mount(main, api) {
     resolveButton.textContent = resolve === "" ? "Resolve" : resolve === "starting" ? "Starting…" : "Started";
     resolveChat.hidden = resolve === "" || resolve === "starting";
     resolveChat.textContent = `The agent ${resolve} is in the Cursor sidebar. Open https://cursor.com/agents/${resolve}. If the sidebar hides it, turn on Filter, Source, API.`;
-    updateProgress(card, behaviour.state.progress[key]);
+    const progress = behaviour.state.progress[key];
+    updateProgress(card, progress);
+    const started = resolve !== "" && resolve !== "starting";
+    card.followupForm.hidden = !started || !REPLY_STATUS.includes(progress?.status);
+    card.followupButton.disabled = card.sending || !card.followupInput.value.trim();
+    card.followupButton.textContent = card.sending ? "Sending…" : "Send";
   }
 
   function render() {

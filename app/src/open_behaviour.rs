@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use tokio::process::Command;
 
-const WORKSPACE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 const PROJECTS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../conf/projects.json");
 const FILE_PATH: &str = "spec/open-behaviour.json";
 const LOG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/resolve");
@@ -20,11 +19,11 @@ const ENV_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.env");
 const API_AGENTS: &str = "https://api.cursor.com/v1/agents";
 const API_KEY_VAR: &str = "CURSOR_API_KEY";
 const AGENT_MODEL: &str = "claude-opus-5-5";
-const SUBAGENT: &str = "target-repo";
 const TOOL_DETAILS: [&str; 6] = ["command", "path", "pattern", "globPattern", "query", "url"];
 const LOCAL_BIN: &str = "cursor-agent";
 const LOCAL_MODEL: &str = "claude-opus-5-5-medium";
 const LOCAL_START: &str = "The cloud agent failed. A local agent resolves the item now.";
+const FOLLOWUP_MARK: &str = "\"type\":\"followup\"";
 
 static LOCAL_LOCK: Mutex<()> = Mutex::new(());
 
@@ -52,6 +51,12 @@ pub struct ResolveStart {
 #[derive(Deserialize)]
 pub struct ProgressRequest {
     chat: String,
+}
+
+#[derive(Deserialize)]
+pub struct FollowupRequest {
+    chat: String,
+    text: String,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -102,8 +107,7 @@ pub async fn resolve(Json(req): Json<ResolveRequest>) -> Result<Json<ResolveStar
     }
     let projects = read_projects(Path::new(PROJECTS_FILE)).map_err(ResolveError::Failed)?;
     let (root, item) = find_item(&projects, &home, &req)?;
-    let workspace = fs::canonicalize(WORKSPACE_DIR).map_err(|e| ResolveError::Failed(format!("failed to open the workspace: {e}")))?;
-    let chat = start_agent(&workspace, &root, &req, &item, decision).await.map_err(ResolveError::Failed)?;
+    let chat = start_agent(&root, &req, &item, decision).await.map_err(ResolveError::Failed)?;
     Ok(Json(ResolveStart { chat }))
 }
 
@@ -114,7 +118,7 @@ pub async fn progress(Query(req): Query<ProgressRequest>) -> Result<Json<Progres
     let path = Path::new(LOG_DIR).join(format!("{}.log", req.chat));
     let log = read_log(&path);
     if req.chat.starts_with("bc-")
-        && !log_has_end(&log)
+        && !log_has_end(last_run(&log))
         && !log.contains(LOCAL_START)
         && let Some((status, text)) = cloud_run(&req.chat).await
     {
@@ -126,11 +130,87 @@ pub async fn progress(Query(req): Query<ProgressRequest>) -> Result<Json<Progres
     Ok(Json(read_progress(&read_log(&path))))
 }
 
-async fn start_agent(workspace: &Path, target: &Path, req: &ResolveRequest, item: &Value, decision: &str) -> Result<String, String> {
+pub async fn followup(Json(req): Json<FollowupRequest>) -> Result<Json<Progress>, ResolveError> {
+    let bad = |msg: &str| ResolveError::BadItem(msg.to_string());
+    if !valid_chat(&req.chat) {
+        return Err(bad("Bad chat id."));
+    }
+    let text = req.text.trim();
+    if text.is_empty() {
+        return Err(bad("The follow-up has no text."));
+    }
+    let path = Path::new(LOG_DIR).join(format!("{}.log", req.chat));
+    if !path.is_file() {
+        return Err(bad("The chat has no log."));
+    }
+    let log = read_log(&path);
+    if !log_has_end(last_run(&log)) {
+        return Err(bad("The agent is still working."));
+    }
+    if log.contains(LOCAL_START) {
+        followup_local(&path, text)?;
+    } else {
+        followup_cloud(&req.chat, &path, text).await.map_err(ResolveError::Failed)?;
+    }
+    Ok(Json(read_progress(&read_log(&path))))
+}
+
+fn followup_line(text: &str) -> String {
+    json!({ "type": "followup", "text": text }).to_string()
+}
+
+async fn followup_cloud(chat: &str, log_path: &Path, text: &str) -> Result<(), String> {
     let key = api_key()?;
-    let workspace_repo = repo_remote(workspace).await?;
+    let created = post_json(&http()?, &key, &format!("{API_AGENTS}/{chat}/runs"), &json!({ "prompt": { "text": text } }))
+        .await
+        .map_err(|e| e.replace("failed to start the Cursor agent", "failed to send the follow-up"))?;
+    append_line(log_path, &followup_line(text))?;
+    let run = created["run"]["id"].as_str().unwrap_or("").to_string();
+    if valid_chat(&run) {
+        let chat = chat.to_string();
+        let log_path = log_path.to_path_buf();
+        tokio::spawn(async move {
+            if let Err(error) = stream_run(&key, &chat, &run, &log_path).await {
+                let error: String = safe_text(&key, &error).chars().take(300).collect();
+                let _ = append_line(&log_path, &error);
+            }
+        });
+    }
+    Ok(())
+}
+
+// the lock keeps one local agent for each chat when two follow-ups arrive at the same time
+fn followup_local(log_path: &Path, text: &str) -> Result<(), ResolveError> {
+    let failed = |msg: String| ResolveError::Failed(msg);
+    let _guard = LOCAL_LOCK.lock().map_err(|_| failed("failed to lock the local agent".to_string()))?;
+    let log = read_log(log_path);
+    if !log_has_end(last_run(&log)) {
+        return Err(ResolveError::BadItem("The agent is still working.".to_string()));
+    }
+    let session = local_session(&log).ok_or_else(|| failed("The local agent has no session.".to_string()))?;
+    let root_path = log_path.with_extension("root");
+    let root = fs::read_to_string(&root_path).map_err(|e| failed(format!("failed to read {}: {e}", root_path.display())))?;
+    append_line(log_path, &followup_line(text)).map_err(failed)?;
+    if let Err(error) = spawn_local(text, Path::new(root.trim()), log_path, Some(&session)) {
+        append_line(log_path, &error).map_err(failed)?;
+        append_end(log_path, &json!({ "type": "result", "is_error": true, "result": "The follow-up failed." }).to_string()).map_err(failed)?;
+    }
+    Ok(())
+}
+
+fn local_session(log: &str) -> Option<String> {
+    let after_start = log.split_once(LOCAL_START)?.1;
+    after_start
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter_map(|event| event["session_id"].as_str().map(str::to_string))
+        .rfind(|id| valid_chat(id))
+}
+
+async fn start_agent(target: &Path, req: &ResolveRequest, item: &Value, decision: &str) -> Result<String, String> {
+    let key = api_key()?;
     let target_repo = repo_remote(target).await?;
-    let body = create_body(req, item, decision, &workspace_repo, &target_repo);
+    let body = create_body(req, item, decision, &target_repo);
     let created = post_json(&http()?, &key, API_AGENTS, &body).await?;
     let chat = created["agent"]["id"]
         .as_str()
@@ -143,6 +223,8 @@ async fn start_agent(workspace: &Path, target: &Path, req: &ResolveRequest, item
     fs::File::create(&log_path).map_err(|e| format!("failed to create {}: {e}", log_path.display()))?;
     let prompt_path = log_path.with_extension("prompt");
     fs::write(&prompt_path, local_prompt(req, target, item, decision)).map_err(|e| format!("failed to create {}: {e}", prompt_path.display()))?;
+    let root_path = log_path.with_extension("root");
+    fs::write(&root_path, target.to_string_lossy().as_bytes()).map_err(|e| format!("failed to create {}: {e}", root_path.display()))?;
     if valid_chat(&run) {
         let stream_chat = chat.clone();
         let stream_key = key.clone();
@@ -160,35 +242,15 @@ fn valid_chat(chat: &str) -> bool {
     !chat.is_empty() && chat.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
-fn create_body(req: &ResolveRequest, item: &Value, decision: &str, workspace: &(String, String), target: &(String, String)) -> Value {
-    let mut repos = vec![json!({ "url": workspace.0, "startingRef": workspace.1 })];
-    if target.0 != workspace.0 {
-        repos.push(json!({ "url": target.0, "startingRef": target.1 }));
-    }
+fn create_body(req: &ResolveRequest, item: &Value, decision: &str, target: &(String, String)) -> Value {
     let name: String = format!("Resolve {} {} #{}", req.tab, req.spec, req.id).chars().take(100).collect();
     json!({
         "name": name,
-        "prompt": { "text": resolve_prompt(req, item, decision, &workspace.0, &target.0) },
+        "prompt": { "text": resolve_prompt(req, item, decision, &target.0) },
         "model": { "id": AGENT_MODEL, "params": [{ "id": "effort", "value": "medium" }] },
-        "repos": repos,
-        "autoCreatePR": false,
-        "customSubagents": [{
-            "name": SUBAGENT,
-            "description": "Edits the target repository. Always use for the code and spec change that resolves the open item.",
-            "prompt": subagent_prompt(&workspace.0, &target.0),
-            "model": "inherit"
-        }]
+        "repos": [{ "url": target.0, "startingRef": target.1 }],
+        "autoCreatePR": false
     })
-}
-
-fn subagent_prompt(workspace_url: &str, target_url: &str) -> String {
-    format!(
-        "You edit only the target repository `{target_url}`.\n\
-         Do not edit the workspace repository `{workspace_url}`.\n\
-         Obey `AGENTS.md` in the target repository.\n\
-         Change the code and `{FILE_PATH}` in the same change.\n\
-         When an open item is resolved, delete that item from `{FILE_PATH}`."
-    )
 }
 
 async fn repo_remote(repo: &Path) -> Result<(String, String), String> {
@@ -342,8 +404,9 @@ async fn cloud_run(chat: &str) -> Option<(String, String)> {
     Some((run["status"].as_str().unwrap_or("").to_string(), run["result"].as_str().unwrap_or("").to_string()))
 }
 
+// a failed follow-up ends the log, because the local agent has no conversation of the cloud agent
 fn end_cloud_run(log_path: &Path, status: &str, text: &str) -> Result<(), String> {
-    if status == "ERROR" && start_local(log_path) {
+    if status == "ERROR" && !read_log(log_path).contains(FOLLOWUP_MARK) && start_local(log_path) {
         return Ok(());
     }
     match end_line(status, text) {
@@ -359,7 +422,8 @@ fn start_local(log_path: &Path) -> bool {
         return true;
     }
     let Ok(prompt) = fs::read_to_string(log_path.with_extension("prompt")) else { return false };
-    match spawn_local(&prompt, log_path) {
+    let Ok(root) = fs::read_to_string(log_path.with_extension("root")) else { return false };
+    match spawn_local(&prompt, Path::new(root.trim()), log_path, None) {
         Ok(()) => true,
         Err(error) => {
             let _ = append_line(log_path, &error);
@@ -368,16 +432,24 @@ fn start_local(log_path: &Path) -> bool {
     }
 }
 
-fn spawn_local(prompt: &str, log_path: &Path) -> Result<(), String> {
-    let workspace = fs::canonicalize(WORKSPACE_DIR).map_err(|e| format!("failed to open the workspace: {e}"))?;
-    append_line(log_path, LOCAL_START)?;
+// a session id resumes the conversation of an earlier local agent
+fn spawn_local(prompt: &str, root: &Path, log_path: &Path, session: Option<&str>) -> Result<(), String> {
+    let root = fs::canonicalize(root).map_err(|e| format!("failed to open {}: {e}", root.display()))?;
+    if session.is_none() {
+        append_line(log_path, LOCAL_START)?;
+    }
     let log = fs::OpenOptions::new().append(true).open(log_path).map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
     let err_log = log.try_clone().map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
-    let mut child = Command::new(LOCAL_BIN)
+    let mut command = Command::new(LOCAL_BIN);
+    command
         .args(["--print", "--output-format", "stream-json", "--force", "--trust", "--model", LOCAL_MODEL, "--workspace"])
-        .arg(&workspace)
+        .arg(&root);
+    if let Some(session) = session {
+        command.args(["--resume", session]);
+    }
+    let mut child = command
         .arg(prompt)
-        .current_dir(&workspace)
+        .current_dir(&root)
         .stdin(Stdio::null())
         .stdout(log)
         .stderr(err_log)
@@ -500,8 +572,16 @@ fn log_has_end(log: &str) -> bool {
     log.contains("\"type\":\"result\"") || log.contains("\"type\": \"result\"") || log.contains("\"type\":\"exit\"") || log.contains("\"type\": \"exit\"")
 }
 
+// a follow-up starts a new run, so only the lines after the last follow-up tell if the agent ended
+fn last_run(log: &str) -> &str {
+    match log.rfind(FOLLOWUP_MARK) {
+        Some(at) => log[at..].split_once('\n').map_or("", |(_, rest)| rest),
+        None => log,
+    }
+}
+
 fn append_end(path: &Path, line: &str) -> Result<(), String> {
-    if log_has_end(&read_log(path)) {
+    if log_has_end(last_run(&read_log(path))) {
         return Ok(());
     }
     append_line(path, line)
@@ -529,6 +609,10 @@ fn read_progress(log: &str) -> Progress {
                 }
             }
             (Some("tool_call"), Some("started")) => steps.push(Step { kind: "tool", text: tool_text(&event["tool_call"]) }),
+            (Some("followup"), _) => {
+                status = "running";
+                steps.push(Step { kind: "reply", text: event["text"].as_str().unwrap_or("").to_string() });
+            }
             (Some("result"), _) if event["is_error"] == true => {
                 status = "failed";
                 if let Some(text) = event["result"].as_str() {
@@ -593,20 +677,18 @@ fn find_item(projects: &Map<String, Value>, home: &str, req: &ResolveRequest) ->
     Ok((root, item.clone()))
 }
 
-fn resolve_prompt(req: &ResolveRequest, item: &Value, decision: &str, workspace_url: &str, target_url: &str) -> String {
+fn resolve_prompt(req: &ResolveRequest, item: &Value, decision: &str, target_url: &str) -> String {
     let item = serde_json::to_string_pretty(item).unwrap_or_default();
     format!(
-        "You are the agent for this workspace repository `{workspace_url}`.\n\
-         Call the `{SUBAGENT}` subagent to resolve one open-behaviour item in the target repository `{target_url}`.\n\
-         Do not edit the target repository yourself.\n\n\
+        "Resolve one open-behaviour item in the repository `{target_url}`.\n\n\
          - File: `{FILE_PATH}`\n\
          - Spec: `{spec}`\n\
          - Item: #{id}\n\
          - Project: `{tab}`\n\n\
          The item:\n\n```json\n{item}\n```\n\n\
          The final decision of the user:\n\n{decision}\n\n\
-         The subagent resolves the item as the final decision tells. When the item is resolved, the subagent deletes it from `{FILE_PATH}`. \
-         The subagent obeys `AGENTS.md` in the target repository.",
+         Resolve the item as the final decision tells. Change the code and `{FILE_PATH}` in the same change. \
+         When the item is resolved, delete it from `{FILE_PATH}`. Obey `AGENTS.md` in the repository.",
         spec = req.spec,
         id = req.id,
         tab = req.tab,
@@ -774,10 +856,9 @@ mod tests {
     #[test]
     fn resolve_prompt_has_the_item_and_the_decision() {
         let req = resolve_request("my-app", "web/01_login", 3);
-        let prompt = resolve_prompt(&req, &json!({ "id": 3 }), "Use option 1.", "https://github.com/acme/workspace", "https://github.com/acme/my-app");
+        let prompt = resolve_prompt(&req, &json!({ "id": 3 }), "Use option 1.", "https://github.com/acme/my-app");
         for part in [
             "`my-app`",
-            "https://github.com/acme/workspace",
             "https://github.com/acme/my-app",
             "`spec/open-behaviour.json`",
             "`web/01_login`",
@@ -785,39 +866,21 @@ mod tests {
             "\"id\": 3",
             "Use option 1.",
             "AGENTS.md",
-            "target-repo",
-            "Do not edit the target repository yourself.",
         ] {
             assert!(prompt.contains(part), "{part}");
         }
     }
 
     #[test]
-    fn create_body_puts_this_repo_first_and_the_target_subagent() {
+    fn create_body_sends_only_the_target_repo() {
         let req = resolve_request("my-app", "web/01_login", 3);
-        let body = create_body(
-            &req,
-            &json!({ "id": 3 }),
-            "Use option 1.",
-            &("https://github.com/acme/workspace".to_string(), "main".to_string()),
-            &("https://github.com/acme/my-app".to_string(), "main".to_string()),
-        );
-        assert_eq!(body["repos"][0]["url"], "https://github.com/acme/workspace");
-        assert_eq!(body["repos"][1]["url"], "https://github.com/acme/my-app");
+        let body = create_body(&req, &json!({ "id": 3 }), "Use option 1.", &("https://github.com/acme/my-app".to_string(), "main".to_string()));
+        assert_eq!(body["repos"], json!([{ "url": "https://github.com/acme/my-app", "startingRef": "main" }]));
         assert_eq!(body["model"]["id"], AGENT_MODEL);
         assert_eq!(body["model"]["params"][0]["id"], "effort");
         assert_eq!(body["model"]["params"][0]["value"], "medium");
         assert_eq!(body["autoCreatePR"], false);
-        assert_eq!(body["customSubagents"][0]["name"], "target-repo");
-        assert!(body["customSubagents"][0]["prompt"].as_str().unwrap().contains("https://github.com/acme/my-app"));
-    }
-
-    #[test]
-    fn create_body_sends_one_repo_when_the_urls_match() {
-        let req = resolve_request("my-app", "web/01_login", 3);
-        let repo = ("https://github.com/acme/my-app".to_string(), "main".to_string());
-        let body = create_body(&req, &json!({ "id": 3 }), "Use option 1.", &repo, &repo);
-        assert_eq!(body["repos"].as_array().unwrap().len(), 1);
+        assert!(body.get("customSubagents").is_none());
     }
 
     #[test]
@@ -928,6 +991,44 @@ mod tests {
 
         let failed = read_progress(r#"{"type":"result","is_error":true,"result":"Model error."}"#);
         assert_eq!(failed, Progress { status: "failed", steps: vec![step("output", "Model error.")] });
+    }
+
+    #[test]
+    fn read_progress_runs_again_after_a_follow_up() {
+        let ended = format!("{}\n{}", r#"{"type":"result","is_error":false,"result":"Done."}"#, followup_line("Also fix the test."));
+        let progress = read_progress(&ended);
+        assert_eq!(progress, Progress { status: "running", steps: vec![step("reply", "Also fix the test.")] });
+        assert!(!log_has_end(last_run(&ended)));
+
+        let again = format!("{ended}\n{}", r#"{"type":"result","is_error":false,"result":"Fixed."}"#);
+        assert_eq!(read_progress(&again).status, "finished");
+        assert!(log_has_end(last_run(&again)));
+    }
+
+    #[test]
+    fn end_cloud_run_of_a_follow_up_starts_no_local_agent() {
+        let dir = temp_home("cloud-followup");
+        let log = dir.join("bc-1.log");
+        write(&log, &format!("{}\n{}\n", r#"{"type":"result","is_error":false,"result":"Done."}"#, followup_line("More.")));
+        write(&log.with_extension("prompt"), "Resolve it.");
+        write(&log.with_extension("root"), dir.to_str().unwrap());
+        end_cloud_run(&log, "ERROR", "").unwrap();
+        let text = read_log(&log);
+        assert!(!text.contains(LOCAL_START));
+        assert_eq!(read_progress(&text).status, "failed");
+    }
+
+    #[test]
+    fn local_session_reads_the_last_session_of_the_local_agent() {
+        let log = [
+            r#"{"type":"system","session_id":"cloud-x"}"#,
+            LOCAL_START,
+            r#"{"type":"system","subtype":"init","session_id":"s-1"}"#,
+            r#"{"type":"result","is_error":false,"session_id":"s-2"}"#,
+        ]
+        .join("\n");
+        assert_eq!(local_session(&log).as_deref(), Some("s-2"));
+        assert_eq!(local_session(r#"{"type":"system","session_id":"s-1"}"#), None);
     }
 
     #[test]

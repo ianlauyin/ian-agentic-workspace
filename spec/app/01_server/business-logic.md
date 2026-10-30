@@ -33,6 +33,7 @@
 | `PUT /page` | Saves the JSON `data` of a page by `name`, and replaces the last save. Returns `null`. |
 | `GET /open-behaviour-items` | Returns the open-behaviour items of each project in `conf/projects.json`. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
 | `POST /open-behaviour-resolve` | Starts an agent that resolves one decided item. Returns `{"chat": "<chat id>"}`. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
-| `GET /open-behaviour-progress` | Returns the progress of the agent of a `chat` as `{"status": "running" \| "finished" \| "failed" \| "stopped", "steps": [{"kind": "message" \| "tool" \| "output", "text": "..."}]}`. A chat id with a character that is not a letter, a digit, or `-` returns 400. A chat with no log returns 400. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
+| `GET /open-behaviour-progress` | Returns the progress of the agent of a `chat` as `{"status": "running" \| "finished" \| "failed" \| "stopped", "steps": [{"kind": "message" \| "tool" \| "output" \| "reply", "text": "..."}]}`. A chat id with a character that is not a letter, a digit, or `-` returns 400. A chat with no log returns 400. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
+| `POST /open-behaviour-followup` | Sends `{"chat": "<chat id>", "text": "..."}` to the agent of that chat as a follow-up. Returns the progress, as `GET /open-behaviour-progress` does. A bad chat id, an empty text, a chat with no log, or an agent that still works returns 400. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
 
 - A page name has only letters, digits, and `-`. Other names return 400.

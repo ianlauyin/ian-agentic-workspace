@@ -20,6 +20,12 @@ const api = {
       body: JSON.stringify(body),
     }),
   loadResolveProgress: (chat) => request(`/open-behaviour-progress?${new URLSearchParams({ chat })}`),
+  followupResolve: (chat, text) =>
+    request("/open-behaviour-followup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat, text }),
+    }),
   loadPage: (name) => request(`/page?${new URLSearchParams({ name })}`),
   savePage: (name, data) =>
     request("/page", {

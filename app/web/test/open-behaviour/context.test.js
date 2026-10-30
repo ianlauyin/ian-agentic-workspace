@@ -20,7 +20,14 @@ function fakeApi(saved, tabs = TABS, started = null, progress = {}) {
   let failSave = false;
   let failLoad = "";
   let failResolve = false;
+  const followups = [];
+  let failFollowup = false;
   const api = {
+    followupResolve: async (chat, text) => {
+      if (failFollowup) throw new Error("The agent is still working.");
+      followups.push({ chat, text });
+      return { status: "running", steps: [{ kind: "reply", text }] };
+    },
     loadResolveProgress: async (chat) => {
       progressLoads.push(chat);
       if (!progress[chat]) throw new Error("The chat has no log.");
@@ -50,6 +57,8 @@ function fakeApi(saved, tabs = TABS, started = null, progress = {}) {
     saves,
     resolves,
     progressLoads,
+    followups,
+    failFollowups: () => (failFollowup = true),
     failSaves: () => (failSave = true),
     failLoads: (message) => (failLoad = message),
     failResolves: () => (failResolve = true),
@@ -269,6 +278,43 @@ describe("refreshProgress", () => {
     await behaviour.refreshProgress();
     assert.deepEqual(behaviour.state.progress, { [KEY]: { status: "error", steps: [], error: "The chat has no log." } });
     assert.equal(fake.progressLoads.length, 1);
+  });
+});
+
+describe("followup", () => {
+  const FINISHED = { status: "finished", steps: [{ kind: "message", text: "Done." }] };
+
+  it("sends the reply to the chat and loads the progress of the new run", async () => {
+    const fake = fakeApi(null, TABS, { [KEY]: "chat_9" }, { chat_9: FINISHED });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.refreshProgress();
+    assert.equal(await behaviour.followup(KEY, "  Also fix the test.  "), true);
+    assert.deepEqual(fake.followups, [{ chat: "chat_9", text: "Also fix the test." }]);
+    assert.equal(behaviour.state.progress[KEY].status, "running");
+    fake.progressLoads.length = 0;
+    await behaviour.refreshProgress();
+    assert.deepEqual(fake.progressLoads, ["chat_9"]);
+  });
+
+  it("sends nothing for an empty reply or an item with no started agent", async () => {
+    const fake = fakeApi(null, TABS, { [KEY]: "chat_9" });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    assert.equal(await behaviour.followup(KEY, "   "), false);
+    assert.equal(await behaviour.followup("my-app/01_login/2", "More."), false);
+    assert.deepEqual(fake.followups, []);
+  });
+
+  it("shows the error and keeps the progress when the send fails", async () => {
+    const fake = fakeApi(null, TABS, { [KEY]: "chat_9" }, { chat_9: FINISHED });
+    const behaviour = createOpenBehaviour(fake.api);
+    await behaviour.load();
+    await behaviour.refreshProgress();
+    fake.failFollowups();
+    assert.equal(await behaviour.followup(KEY, "More."), false);
+    assert.equal(behaviour.state.error, "Failed to send the follow-up: The agent is still working.");
+    assert.deepEqual(behaviour.state.progress[KEY], FINISHED);
   });
 });
 

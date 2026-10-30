@@ -40,12 +40,10 @@ Each item is one card. The card has these parts, in this order:
 
 - The Resolve button shows only on a card that has a saved final decision.
 - The Resolve button is disabled when the input text is not the same as the saved decision. Save the decision first.
-- Resolve starts one Cursor cloud agent on the remote of this workspace. The model is Claude Opus 5.5 with medium effort. The server reads `CURSOR_API_KEY` from the process environment. When that value is empty, the server reads `.env` at the workspace root. An empty value is a start failure.
-- The cloud agent calls one subagent. The subagent name is `target-repo`. The subagent works on the remote of the project of the item. The cloud agent does not edit that project.
-- The remotes are the `origin` remote of this workspace and the `origin` remote of the project. The server sends each remote as an HTTPS URL. The start branch is the default branch of `origin`.
-- When the two remotes are the same URL, the server sends that remote one time.
-- The subagent resolves the item as the saved final decision tells. It obeys `AGENTS.md` in the target repository. It deletes the item from `spec/open-behaviour.json` on a new branch of the target remote. The page reads the local file, so the item stays on the page until that branch is in the local file.
-- When the cloud agent fails, the server starts one local Cursor agent for the same item. The local agent works in this workspace, on the local project folder. It obeys `AGENTS.md` of this workspace. The model is Claude Opus 5.5 with medium effort. The card keeps the same agent id. The progress shows "The cloud agent failed. A local agent resolves the item now.", and then the progress of the local agent. A cloud agent that stopped or finished does not start a local agent.
+- Resolve starts one Cursor cloud agent directly on the remote of the project of the item. The agent does not get the remote of this workspace and calls no subagent. The model is Claude Opus 5.5 with medium effort. The server reads `CURSOR_API_KEY` from the process environment. When that value is empty, the server reads `.env` at the workspace root. An empty value is a start failure.
+- The remote is the `origin` remote of the project. The server sends it as an HTTPS URL. The start branch is the default branch of `origin`.
+- The agent resolves the item as the saved final decision tells. It obeys `AGENTS.md` in the project repository. It deletes the item from `spec/open-behaviour.json` on a new branch of the project remote. The page reads the local file, so the item stays on the page until that branch is in the local file.
+- When the cloud agent fails, the server starts one local Cursor agent for the same item. The local agent works in the local project folder. It obeys `AGENTS.md` of the project. The model is Claude Opus 5.5 with medium effort. The card keeps the same agent id. The progress shows "The cloud agent failed. A local agent resolves the item now.", and then the progress of the local agent. A cloud agent that stopped or finished does not start a local agent.
 - The agent runs without a person. It can edit files and run commands without approval.
 - The agent continues when the page closes or the server restarts.
 - After the start, the button shows "Started" and stays disabled. The card shows the cloud agent id and the agent URL. The agent is in the Cursor agents sidebar. The sidebar shows the agent when the source filter includes API. A reload keeps this state.
@@ -56,6 +54,17 @@ Each item is one card. The card has these parts, in this order:
 - If the progress cannot be loaded, the card shows the error. A reload tries again.
 - When the log has no end and no local agent started, the progress route reads the cloud run. A run that has ended adds the end to the log, or starts the local agent when the run failed. A failed read of the cloud run leaves the log as it is.
 - If the start fails, the page shows the error, and the user can click Resolve again.
+
+## Follow-up
+
+- Under the progress, the card shows a follow-up input and a Send button. They show only when the started agent finished or stopped before it finished.
+- Send or Cmd+Enter sends the text to the same agent session. The Send button is disabled when the text is empty or while the text is sent.
+- For a cloud agent, the server starts a new run of that agent. The run keeps the conversation and the workspace of the agent.
+- For a local agent after a failed cloud agent, the server starts the local agent again and resumes its last session.
+- The progress shows the follow-up text as a step. Then the status is "the agent is working" again, and the page loads the progress each 3 seconds until the new run ends.
+- A failed follow-up run does not start a local agent. The status is "the agent failed", and the page removes the started resolve.
+- When the agent still works, the server does not send the follow-up and returns 400.
+- If the send fails, the page shows the error and keeps the text in the input.
 - The server starts an agent only for an item that is in `spec/open-behaviour.json` of a project in `conf/projects.json`. A different item returns 400.
 
 ## Persist

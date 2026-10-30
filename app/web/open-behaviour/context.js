@@ -110,6 +110,24 @@ export function createOpenBehaviour(api, onChange = () => {}) {
     onChange();
   }
 
+  // the returned progress has the status "running", so refreshProgress loads the new steps
+  async function followup(key, text) {
+    const chat = state.resolves[key];
+    const trimmed = text.trim();
+    if (!chat || chat === "starting" || !trimmed) return false;
+    try {
+      const progress = await api.followupResolve(chat, trimmed);
+      state.progress = { ...state.progress, [key]: progress };
+      state.error = "";
+      onChange();
+      return true;
+    } catch (e) {
+      state.error = `Failed to send the follow-up: ${e.message}`;
+      onChange();
+      return false;
+    }
+  }
+
   // an ended agent writes no more steps, so its progress is not loaded again
   async function refreshProgress() {
     const running = Object.entries(state.resolves).filter(
@@ -142,5 +160,5 @@ export function createOpenBehaviour(api, onChange = () => {}) {
     onChange();
   }
 
-  return { state, load, decide, resolve, refreshProgress };
+  return { state, load, decide, resolve, followup, refreshProgress };
 }
