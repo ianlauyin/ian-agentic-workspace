@@ -1,10 +1,10 @@
 # Report
 
-These rules apply to each report file that an agent writes. A subagent also obeys these rules.
+These rules apply to each report file that the primary agent writes in this workspace.
 
 ## File
 
-- Write the report as `report/{date}/{issue}.html` at the root of this workspace. A subagent uses the absolute path of this workspace.
+- Write the report as `report/{date}/{issue}.html` at the root of this workspace.
 - `{date}` is the HKT date when you write the report, in the format `YYYYMMDD`.
 - `{issue}` is a short name of the issue in lowercase words with hyphens.
 - Do not write a report in a different folder or in a different format.
