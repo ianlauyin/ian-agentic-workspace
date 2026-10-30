@@ -4,7 +4,7 @@
 
 - The page shows one tab for each project in `conf/projects.json`, in the order of that file. The tab name is the project name. The user cannot change the tab name.
 - Each tab shows a badge with the number of open items of that project. The badge changes after each save of a final decision. A tab with no open item shows no badge.
-- The items of a tab come from `spec/open-behaviour.json` of that project, in the order of that file. The file rules are in `template/spec/structure.md`. If the file is not there, the tab has no items.
+- The items of a tab come from `spec/open-behaviour.json` of that project, in the order of that file. If the file is not there, the tab has no items.
 - The page reads the files each time it opens. Thus, a change to a file shows after a reload.
 - Under the tabs, the page shows a kind filter with these buttons: "All", "Bug", "Needs decision", and "Cleanup". When the page opens, "All" is selected.
 - When a kind is selected, the page shows only the items of that kind in all tabs. The badges, the number of items under the title, and the "No open item." text count only the items of that kind. "All" shows the items of all kinds.
