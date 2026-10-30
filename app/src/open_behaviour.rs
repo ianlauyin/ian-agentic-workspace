@@ -18,10 +18,10 @@ const LOG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/resolve");
 const ENV_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.env");
 const API_AGENTS: &str = "https://api.cursor.com/v1/agents";
 const API_KEY_VAR: &str = "CURSOR_API_KEY";
-const AGENT_MODEL: &str = "claude-opus-5-5";
+const AGENT_MODEL: &str = "claude-sonnet-5-5";
 const TOOL_DETAILS: [&str; 6] = ["command", "path", "pattern", "globPattern", "query", "url"];
 const LOCAL_BIN: &str = "cursor-agent";
-const LOCAL_MODEL: &str = "claude-opus-5-5-medium";
+const LOCAL_MODEL: &str = "claude-sonnet-5-5-medium";
 const LOCAL_START: &str = "The cloud agent failed. A local agent resolves the item now.";
 const FOLLOWUP_MARK: &str = "\"type\":\"followup\"";
 
@@ -247,7 +247,7 @@ fn create_body(req: &ResolveRequest, item: &Value, decision: &str, target: &(Str
     json!({
         "name": name,
         "prompt": { "text": resolve_prompt(req, item, decision, &target.0) },
-        "model": { "id": AGENT_MODEL, "params": [{ "id": "effort", "value": "medium" }] },
+        "model": { "id": AGENT_MODEL, "params": [{ "id": "reasoning_effort", "value": "medium" }] },
         "repos": [{ "url": target.0, "startingRef": target.1 }],
         "autoCreatePR": false
     })
@@ -877,7 +877,7 @@ mod tests {
         let body = create_body(&req, &json!({ "id": 3 }), "Use option 1.", &("https://github.com/acme/my-app".to_string(), "main".to_string()));
         assert_eq!(body["repos"], json!([{ "url": "https://github.com/acme/my-app", "startingRef": "main" }]));
         assert_eq!(body["model"]["id"], AGENT_MODEL);
-        assert_eq!(body["model"]["params"][0]["id"], "effort");
+        assert_eq!(body["model"]["params"][0]["id"], "reasoning_effort");
         assert_eq!(body["model"]["params"][0]["value"], "medium");
         assert_eq!(body["autoCreatePR"], false);
         assert!(body.get("customSubagents").is_none());
