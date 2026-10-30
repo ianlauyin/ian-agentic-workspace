@@ -829,7 +829,8 @@ fn resolve_prompt(req: &ResolveRequest, item: &Value, decision: &str, target_url
          The item:\n\n```json\n{item}\n```\n\n\
          The final decision of the user:\n\n{decision}\n\n\
          Resolve the item as the final decision tells. Change the code and `{FILE_PATH}` in the same change. \
-         When the item is resolved, delete it from `{FILE_PATH}`. Obey `AGENTS.md` in the repository.",
+         When the item is resolved, remove the whole item #{id} object from the `items` list of the `{spec}` entry \
+         in `{FILE_PATH}`. Do not keep the item with a resolved status or a note. Obey `AGENTS.md` in the repository.",
         spec = req.spec,
         id = req.id,
         tab = req.tab,
@@ -845,7 +846,8 @@ fn local_prompt(req: &ResolveRequest, root: &Path, item: &Value, decision: &str)
          - Item: #{id}\n\n\
          The item:\n\n```json\n{item}\n```\n\n\
          The final decision of the user:\n\n{decision}\n\n\
-         Resolve the item as the final decision tells. When the item is resolved, delete it from `{FILE_PATH}`. \
+         Resolve the item as the final decision tells. When the item is resolved, remove the whole item #{id} object \
+         from the `items` list of the `{spec}` entry in `{FILE_PATH}`. Do not keep the item with a resolved status or a note. \
          Obey `AGENTS.md`.",
         tab = req.tab,
         root = root.display(),
@@ -1006,6 +1008,7 @@ mod tests {
             "#3",
             "\"id\": 3",
             "Use option 1.",
+            "remove the whole item #3 object from the `items` list of the `web/01_login` entry",
             "AGENTS.md",
         ] {
             assert!(prompt.contains(part), "{part}");
@@ -1070,7 +1073,16 @@ mod tests {
     fn local_prompt_has_the_project_path_and_the_decision() {
         let req = resolve_request("my-app", "web/01_login", 3);
         let prompt = local_prompt(&req, Path::new("/code/my-app"), &json!({ "id": 3 }), "Use option 1.");
-        for part in ["`my-app`", "`/code/my-app`", "`web/01_login`", "#3", "\"id\": 3", "Use option 1.", "AGENTS.md"] {
+        for part in [
+            "`my-app`",
+            "`/code/my-app`",
+            "`web/01_login`",
+            "#3",
+            "\"id\": 3",
+            "Use option 1.",
+            "remove the whole item #3 object from the `items` list of the `web/01_login` entry",
+            "AGENTS.md",
+        ] {
             assert!(prompt.contains(part), "{part}");
         }
     }
