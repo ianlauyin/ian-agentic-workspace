@@ -1,0 +1,122 @@
+.logs-page {
+  > .error {
+    color: var(--bad);
+    white-space: pre-wrap;
+  }
+
+  > .logs-page-tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    margin: 8px 0 16px;
+    border-bottom: 1px solid var(--line);
+
+    > button {
+      font: inherit;
+      padding: 8px 14px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      white-space: nowrap;
+
+      &:hover {
+        color: var(--text);
+      }
+
+      &.on {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+        font-weight: 600;
+      }
+    }
+  }
+
+  > .logs-page-bar {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+
+    > label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    > .status {
+      color: var(--muted);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  > .logs-page-list {
+    overflow-x: auto;
+
+    > .empty {
+      color: var(--muted);
+      margin: 0;
+    }
+
+    > table {
+      border-collapse: collapse;
+      background: var(--panel);
+      font-size: 12px;
+
+      th,
+      td {
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        white-space: nowrap;
+        max-width: 600px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      [data-column="user_agent"] {
+        max-width: 140px;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: var(--panel);
+        color: var(--muted);
+      }
+
+      tr.warn > td:first-child {
+        border-left: 3px solid var(--accent);
+      }
+
+      tr.error > td:first-child {
+        border-left: 3px solid var(--bad);
+      }
+    }
+  }
+
+  > .logs-page-popup {
+    position: fixed;
+    z-index: 10;
+    max-width: min(480px, calc(100vw - 16px));
+    padding: 6px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+
+    &[hidden] {
+      display: none;
+    }
+  }
+}

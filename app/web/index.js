@@ -2,6 +2,7 @@ const PAGES = [
   { path: "/todo", title: "TODO", module: "/todo/index.js" },
   { path: "/open-behaviour", title: "Open Behaviour", module: "/open-behaviour/index.js" },
   { path: "/notes", title: "Notes", module: "/notes/index.js" },
+  { path: "/logs", title: "Logs", module: "/logs/index.js" },
 ];
 const HOME = "/todo";
 
@@ -20,6 +21,8 @@ const api = {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }),
+  loadLogApps: () => request("/logs-apps"),
+  loadLogs: (params) => request(`/logs-events?${new URLSearchParams(params)}`),
   loadOpenBehaviour: () => request("/open-behaviour-items"),
   resolveOpenBehaviour: (body) =>
     request("/open-behaviour-resolve", {

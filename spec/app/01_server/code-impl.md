@@ -6,6 +6,7 @@
 - `app/src/page.rs` holds the `/page` routes and the check of the page name.
 - `app/src/open_behaviour.rs` holds the `/open-behaviour-items` route, the `/open-behaviour-resolve` route, the `/open-behaviour-progress` route, and the `/open-behaviour-followup` route. Refer to `spec/app/03_open-behaviour/code-impl.md`.
 - `app/src/notes.rs` holds the `/projects` route and the `/notes-assign` route. Refer to `spec/app/04_notes/code-impl.md`.
+- `app/src/logs.rs` holds the `/logs-apps` route and the `/logs-events` route. Refer to `spec/app/05_logs/code-impl.md`.
 - `app/src/db.rs` holds the DB access.
 - `app/web/` is the frontend. It uses plain HTML, JavaScript modules, and CSS. It has no build step and no packages.
 - `app/web/index.html` is the page shell. It has the tab bar and `main`.
