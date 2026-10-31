@@ -2,6 +2,8 @@
 
 This repo is a workspace for a primary agent. The primary agent gives the work to subagents. Each subagent does its work in a different repo. The primary agent obeys the rules in this workspace.
 
+Before you look up framework logic or code implementation, read `spec/structure.md`. Then read the spec and the code that it points to.
+
 ## Roles
 
 | Agent | Work | Rules |
