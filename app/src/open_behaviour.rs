@@ -13,14 +13,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use tokio::process::Command;
 
-const PROJECTS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../conf/projects.json");
+pub const PROJECTS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../conf/projects.json");
 const FILE_PATH: &str = "spec/open-behaviour.json";
 const LOG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/resolve");
 const TOOL_DETAILS: [&str; 6] = ["command", "path", "pattern", "globPattern", "query", "url"];
 const LOCAL_BIN: &str = "cursor-agent";
 const LOCAL_MODEL: &str = "claude-sonnet-5-5-medium";
 const GROK_MODEL: &str = "grok-4.7-high";
-const GROK_START: &str = "The local agent failed. A local Grok agent resolves the item now.";
+const GROK_START: &str = "The local agent failed. A local Grok agent takes over now.";
 const FOLLOWUP_MARK: &str = "\"type\":\"followup\"";
 
 static LOCAL_LOCK: Mutex<()> = Mutex::new(());
@@ -44,6 +44,12 @@ pub struct ResolveRequest {
 #[derive(Serialize)]
 pub struct ResolveStart {
     chat: String,
+}
+
+impl ResolveStart {
+    pub fn new(chat: String) -> Self {
+        Self { chat }
+    }
 }
 
 #[derive(Deserialize)]
@@ -105,7 +111,8 @@ pub async fn resolve(Json(req): Json<ResolveRequest>) -> Result<Json<ResolveStar
     }
     let projects = read_projects(Path::new(PROJECTS_FILE)).map_err(ResolveError::Failed)?;
     let (root, item) = find_item(&projects, &home, &req)?;
-    let chat = start_agent(&root, &req, &item, decision).map_err(ResolveError::Failed)?;
+    let prompt = local_prompt(&req, &root, &item, decision);
+    let chat = start_agent(&root, &prompt).map_err(ResolveError::Failed)?;
     Ok(Json(ResolveStart { chat }))
 }
 
@@ -176,7 +183,7 @@ fn local_session(log: &str) -> Option<String> {
 }
 
 // when the first agent cannot start, the Grok agent starts; the start fails only when both cannot start
-fn start_agent(root: &Path, req: &ResolveRequest, item: &Value, decision: &str) -> Result<String, String> {
+pub fn start_agent(root: &Path, prompt: &str) -> Result<String, String> {
     let chat = new_chat()?;
     fs::create_dir_all(LOG_DIR).map_err(|e| format!("failed to create {LOG_DIR}: {e}"))?;
     let log_path = Path::new(LOG_DIR).join(format!("{chat}.log"));
@@ -185,12 +192,11 @@ fn start_agent(root: &Path, req: &ResolveRequest, item: &Value, decision: &str) 
         .create_new(true)
         .open(&log_path)
         .map_err(|e| format!("failed to create {}: {e}", log_path.display()))?;
-    let prompt = local_prompt(req, root, item, decision);
     let prompt_path = log_path.with_extension("prompt");
-    fs::write(&prompt_path, &prompt).map_err(|e| format!("failed to create {}: {e}", prompt_path.display()))?;
+    fs::write(&prompt_path, prompt).map_err(|e| format!("failed to create {}: {e}", prompt_path.display()))?;
     let root_path = log_path.with_extension("root");
     fs::write(&root_path, root.to_string_lossy().as_bytes()).map_err(|e| format!("failed to create {}: {e}", root_path.display()))?;
-    if let Err(error) = spawn_local(&prompt, root, &log_path, LOCAL_MODEL, None, true) {
+    if let Err(error) = spawn_local(prompt, root, &log_path, LOCAL_MODEL, None, true) {
         append_line(&log_path, &error)?;
         if !start_local(&log_path, GROK_START, GROK_MODEL) {
             return Err(error);
@@ -387,13 +393,13 @@ fn load_tabs(projects_file: &Path, home: &str) -> Result<Vec<Tab>, String> {
     Ok(projects.iter().map(|(id, project)| project_tab(id, project, home)).collect())
 }
 
-fn read_projects(projects_file: &Path) -> Result<Map<String, Value>, String> {
+pub fn read_projects(projects_file: &Path) -> Result<Map<String, Value>, String> {
     let name = projects_file.display();
     let text = fs::read_to_string(projects_file).map_err(|e| format!("failed to read {name}: {e}"))?;
     serde_json::from_str(&text).map_err(|e| format!("failed to parse {name}: {e}"))
 }
 
-fn project_root(project: &Value, home: &str) -> Option<PathBuf> {
+pub fn project_root(project: &Value, home: &str) -> Option<PathBuf> {
     let path = project["path"].as_str()?;
     Some(match path.strip_prefix("~/") {
         Some(rest) => Path::new(home).join(rest),

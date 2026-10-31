@@ -1,6 +1,7 @@
 const PAGES = [
   { path: "/todo", title: "TODO", module: "/todo/index.js" },
   { path: "/open-behaviour", title: "Open Behaviour", module: "/open-behaviour/index.js" },
+  { path: "/notes", title: "Notes", module: "/notes/index.js" },
 ];
 const HOME = "/todo";
 
@@ -12,6 +13,13 @@ async function request(path, init) {
 }
 
 const api = {
+  loadProjects: () => request("/projects"),
+  assignNote: (body) =>
+    request("/notes-assign", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   loadOpenBehaviour: () => request("/open-behaviour-items"),
   resolveOpenBehaviour: (body) =>
     request("/open-behaviour-resolve", {

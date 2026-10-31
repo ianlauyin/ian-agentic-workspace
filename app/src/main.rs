@@ -1,4 +1,5 @@
 mod db;
+mod notes;
 mod open_behaviour;
 mod page;
 
@@ -17,7 +18,7 @@ const ADDR: &str = "127.0.0.1:47322";
 const DATA_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data");
 const WEB_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/web");
 // the browser routes these paths, so each one returns index.html
-const PAGE_PATHS: [&str; 3] = ["/", "/todo", "/open-behaviour"];
+const PAGE_PATHS: [&str; 4] = ["/", "/todo", "/open-behaviour", "/notes"];
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
@@ -32,6 +33,8 @@ fn app(db: Arc<Db>, web_dir: &str) -> Router {
     let index = ServeFile::new(format!("{web_dir}/index.html"));
     let mut router = Router::new()
         .route("/page", get(page::load).put(page::save))
+        .route("/projects", get(notes::projects))
+        .route("/notes-assign", post(notes::assign))
         .route("/open-behaviour-items", get(open_behaviour::load))
         .route("/open-behaviour-resolve", post(open_behaviour::resolve))
         .route("/open-behaviour-progress", get(open_behaviour::progress))

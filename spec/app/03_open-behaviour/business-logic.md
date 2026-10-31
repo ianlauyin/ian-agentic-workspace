@@ -41,7 +41,7 @@ Each item is one card. The card has these parts, in this order:
 - The Resolve button is disabled when the input text is not the same as the saved decision. Save the decision first.
 - Resolve starts one local Cursor agent in the local project folder of the item. Resolve starts no cloud agent. The agent calls no subagent. The model is Claude Sonnet 5.5 with medium effort.
 - The agent resolves the item as the saved final decision tells. It obeys `AGENTS.md` of the project. When the item is resolved, the agent removes the full item from the `items` list of its spec entry in `spec/open-behaviour.json` of the local project folder. It does not keep the item with a resolved status or a note. The page reads the local file, so the item goes from the page after a reload.
-- When the first agent fails, the server starts a local Cursor agent with Grok 4.7 and high effort, in the same folder with the same prompt. The progress shows "The local agent failed. A local Grok agent resolves the item now."
+- When the first agent fails, the server starts a local Cursor agent with Grok 4.7 and high effort, in the same folder with the same prompt. The progress shows "The local agent failed. A local Grok agent takes over now."
 - An agent fails when it gives a failed result, or when it exits with an error code before a result. When the first agent cannot start, the server starts the Grok agent. When the Grok agent also cannot start, the start fails.
 - The card keeps the chat id that the server gives at the start. The progress shows the progress of the first agent and then of the Grok agent. An agent that stopped or finished does not start the Grok agent.
 - The agent runs without a person. It can edit files and run commands without approval.
