@@ -14,7 +14,7 @@
 - The `id` field has no column.
 - The `ts` cell shows the date and the time to the second, as `YYYY-MM-DD HH:MM:SS`, in the time of the event.
 - The `user_agent` column is narrow.
-- A cell that is too long for its column shows an ellipsis. The full text shows in a popup under the cell when the user holds the pointer on the cell.
+- A cell that is too long for its column shows an ellipsis. The full text shows in a modal when the user clicks the cell. The user closes the modal with the Close button, with the Escape key, or with a click outside the modal.
 - A value that is an object or a list shows as JSON text. The table scrolls sideways when it is wider than the page.
 - The first cell of a row of level `warn` or `error` has a colored left border.
 - Previous is disabled on the first page. Next is disabled on the last page.

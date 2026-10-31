@@ -37,7 +37,10 @@ export function mount(main, api) {
         <button class="g-button next" type="button">Next</button>
       </div>
       <div class="logs-page-list"></div>
-      <div class="logs-page-popup" hidden></div>
+      <dialog class="logs-page-modal">
+        <button class="g-button close" type="button">Close</button>
+        <pre class="text"></pre>
+      </dialog>
     </div>`;
   const tabsBar = main.querySelector(".logs-page-tabs");
   const error = main.querySelector(".error");
@@ -52,22 +55,19 @@ export function mount(main, api) {
   const next = main.querySelector(".next");
   const status = main.querySelector(".status");
   const list = main.querySelector(".logs-page-list");
-  const popup = main.querySelector(".logs-page-popup");
+  const modal = main.querySelector(".logs-page-modal");
+  const modalText = main.querySelector(".logs-page-modal .text");
 
-  // a cell with an ellipsis shows its full text in the popup
-  list.addEventListener("mouseover", (e) => {
+  // a click on a cell with an ellipsis shows its full text in the modal
+  list.addEventListener("click", (e) => {
     const cell = e.target.closest("td, th");
     if (!cell || cell.scrollWidth <= cell.clientWidth) return;
-    popup.textContent = cell.textContent;
-    popup.hidden = false;
-    const box = cell.getBoundingClientRect();
-    popup.style.left = `${Math.min(box.left, window.innerWidth - popup.offsetWidth - 8)}px`;
-    popup.style.top = `${box.bottom + 4}px`;
+    modalText.textContent = cell.textContent;
+    modal.showModal();
   });
-  list.addEventListener("mouseout", (e) => {
-    if (!e.relatedTarget?.closest("td, th")) popup.hidden = true;
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal || e.target.closest(".close")) modal.close();
   });
-  list.addEventListener("scroll", () => (popup.hidden = true));
 
   dateInput.addEventListener("change", () => {
     if (dateInput.value) void logs.show(logs.state.app, dateInput.value, 1);
@@ -157,7 +157,6 @@ export function mount(main, api) {
     next.disabled = loading || !result || result.page >= pages;
     status.textContent = loading ? "Loading…" : result ? `Page ${result.page} of ${pages} · ${result.total} events` : "";
     if (loading) return;
-    popup.hidden = true;
     const empty = document.createElement("p");
     empty.className = "empty";
     empty.textContent = "No log.";

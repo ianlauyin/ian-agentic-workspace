@@ -137,22 +137,29 @@
     }
   }
 
-  > .logs-page-popup {
-    position: fixed;
-    z-index: 10;
-    max-width: min(480px, calc(100vw - 16px));
-    padding: 6px 10px;
+  > .logs-page-modal {
+    width: min(720px, calc(100vw - 32px));
+    max-height: calc(100vh - 64px);
+    padding: 12px;
     background: var(--panel);
+    color: var(--text);
     border: 1px solid var(--line);
-    border-radius: 6px;
-    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
-    font-size: 12px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    pointer-events: none;
+    border-radius: 8px;
 
-    &[hidden] {
-      display: none;
+    &::backdrop {
+      background: rgb(0 0 0 / 0.5);
+    }
+
+    > .close {
+      display: block;
+      margin-left: auto;
+    }
+
+    > .text {
+      margin: 8px 0 0;
+      font: 12px ui-monospace, Menlo, monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
   }
 }
