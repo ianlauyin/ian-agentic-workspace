@@ -1,4 +1,4 @@
-import { cellText, createLogs, logColumns, pageCount } from "./context.js";
+import { PAGE_SIZES, cellText, createLogs, logColumns, pageCount } from "./context.js";
 
 const CSS = "/logs/index.css";
 
@@ -15,10 +15,23 @@ export function mount(main, api) {
       <h1>Logs</h1>
       <div class="logs-page-tabs"></div>
       <p class="error" hidden></p>
-      <div class="logs-page-bar">
+      <form class="logs-page-bar logs-page-panel">
         <label>Date (HKT)
           <input class="g-text-input date" type="date">
         </label>
+        <label>Rows
+          <select class="g-text-input page-size"></select>
+        </label>
+        <button class="g-button refresh">Refresh</button>
+      </form>
+      <form class="logs-page-bar logs-page-filters">
+        <input class="g-text-input field" list="logs-page-fields" placeholder="Field" autocomplete="off">
+        <datalist id="logs-page-fields"></datalist>
+        <input class="g-text-input value" placeholder="Value" autocomplete="off">
+        <button class="g-button add-filter">Add filter</button>
+        <span class="pills"></span>
+      </form>
+      <div class="logs-page-bar logs-page-pager">
         <button class="g-button prev" type="button">Previous</button>
         <span class="status"></span>
         <button class="g-button next" type="button">Next</button>
@@ -29,6 +42,12 @@ export function mount(main, api) {
   const tabsBar = main.querySelector(".logs-page-tabs");
   const error = main.querySelector(".error");
   const dateInput = main.querySelector(".date");
+  const pageSize = main.querySelector(".page-size");
+  const refresh = main.querySelector(".refresh");
+  const fieldInput = main.querySelector(".field");
+  const valueInput = main.querySelector(".value");
+  const fieldList = main.querySelector("datalist");
+  const pills = main.querySelector(".pills");
   const prev = main.querySelector(".prev");
   const next = main.querySelector(".next");
   const status = main.querySelector(".status");
@@ -52,6 +71,23 @@ export function mount(main, api) {
 
   dateInput.addEventListener("change", () => {
     if (dateInput.value) void logs.show(logs.state.app, dateInput.value, 1);
+  });
+  main.querySelector(".logs-page-panel").addEventListener("submit", (e) => {
+    e.preventDefault();
+    void logs.reload();
+  });
+  pageSize.replaceChildren(
+    ...PAGE_SIZES.map((n) => Object.assign(document.createElement("option"), { value: n, textContent: `${n} rows` })),
+  );
+  pageSize.addEventListener("change", () => void logs.setPageSize(Number(pageSize.value)));
+  main.querySelector(".logs-page-filters").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const field = fieldInput.value.trim();
+    const value = valueInput.value;
+    if (!field || !value) return;
+    fieldInput.value = "";
+    valueInput.value = "";
+    void logs.addFilter(field, value);
   });
   prev.addEventListener("click", () => void logs.show(logs.state.app, logs.state.date, logs.state.result.page - 1));
   next.addEventListener("click", () => void logs.show(logs.state.app, logs.state.date, logs.state.result.page + 1));
@@ -96,6 +132,26 @@ export function mount(main, api) {
     }
     for (const button of tabsBar.children) button.classList.toggle("on", button.dataset.tab === app);
     dateInput.value = date;
+    pageSize.value = logs.state.pageSize;
+    refresh.disabled = loading;
+    fieldList.replaceChildren(
+      ...(result ? logColumns(result.events).map((c) => Object.assign(document.createElement("option"), { value: c.label })) : []),
+    );
+    pills.replaceChildren(
+      ...logs.state.filters.map((filter, index) => {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.title = "Remove filter";
+        remove.textContent = "×";
+        remove.addEventListener("click", () => void logs.removeFilter(index));
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        const name = document.createElement("b");
+        name.textContent = filter.field;
+        pill.append(name, `: ${filter.value}`, remove);
+        return pill;
+      }),
+    );
     const pages = result ? pageCount(result.total, result.page_size) : 1;
     prev.disabled = loading || !result || result.page <= 1;
     next.disabled = loading || !result || result.page >= pages;

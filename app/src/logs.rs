@@ -12,7 +12,7 @@ use crate::open_behaviour::ResolveError;
 
 const CONFIG_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../conf/log-server.json");
 const ENV_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.env");
-const PAGE_SIZE: usize = 50;
+const PAGE_SIZES: [usize; 4] = [50, 100, 500, 1000];
 const DAY_LIMIT: usize = 1000;
 const FETCH_SECONDS: &str = "20";
 
@@ -27,6 +27,14 @@ pub struct LogsRequest {
     app: String,
     date: String,
     page: usize,
+    page_size: Option<usize>,
+    filters: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Filter {
+    field: String,
+    value: String,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -56,13 +64,21 @@ pub async fn load(Query(req): Query<LogsRequest>) -> Result<Json<LogsPage>, Reso
     if !valid_date(&req.date) {
         return Err(bad("Bad date."));
     }
+    let page_size = req.page_size.unwrap_or(PAGE_SIZES[0]);
+    if !PAGE_SIZES.contains(&page_size) {
+        return Err(bad("Bad page size."));
+    }
+    let filters: Vec<Filter> = match &req.filters {
+        Some(text) => serde_json::from_str(text).map_err(|_| bad("Bad filters."))?,
+        None => Vec::new(),
+    };
     let config = read_config(Path::new(CONFIG_FILE)).map_err(ResolveError::Failed)?;
     let server_app = config.apps.iter().find(|(id, _)| *id == req.app).map(|(_, name)| name).ok_or_else(|| bad("Unknown app."))?;
     let key = read_env_value(Path::new(ENV_FILE), &config.key_name).map_err(ResolveError::Failed)?;
     let url = format!("{}/log/{}?date={}&limit={DAY_LIMIT}", config.base_url.trim_end_matches('/'), server_app, req.date);
     let body = fetch(&url, &key).await.map_err(ResolveError::Failed)?;
     let events = parse_events(&body).map_err(ResolveError::Failed)?;
-    Ok(Json(page_of(events, req.page)))
+    Ok(Json(page_of(events, &filters, req.page, page_size)))
 }
 
 fn valid_date(date: &str) -> bool {
@@ -121,11 +137,29 @@ fn parse_events(body: &str) -> Result<Vec<Value>, String> {
 }
 
 // the log server gives the events of a day in the stored order, and the page shows the newest first
-fn page_of(mut events: Vec<Value>, page: usize) -> LogsPage {
+fn page_of(mut events: Vec<Value>, filters: &[Filter], page: usize, page_size: usize) -> LogsPage {
     events.reverse();
+    events.retain(|event| filters.iter().all(|filter| matches(event, filter)));
     let total = events.len();
-    let events = events.into_iter().skip((page - 1) * PAGE_SIZE).take(PAGE_SIZE).collect();
-    LogsPage { page, page_size: PAGE_SIZE, total, events }
+    let events = events.into_iter().skip((page - 1) * page_size).take(page_size).collect();
+    LogsPage { page, page_size, total, events }
+}
+
+// a field is a path of keys from the event, such as `extra.query.limit`, and the value is the text of the field
+fn matches(event: &Value, filter: &Filter) -> bool {
+    let mut value = event.clone();
+    for key in filter.field.split('.') {
+        if let Value::String(text) = &value {
+            let Ok(parsed) = serde_json::from_str(text) else { return false };
+            value = parsed;
+        }
+        value = value[key].clone();
+    }
+    match value {
+        Value::Null => false,
+        Value::String(text) => text == filter.value,
+        other => other.to_string() == filter.value,
+    }
 }
 
 #[cfg(test)]
@@ -140,13 +174,30 @@ mod tests {
 
     #[test]
     fn page_of_gives_the_newest_events_first() {
-        let page = page_of(events(120), 1);
+        let page = page_of(events(120), &[], 1, 50);
         assert_eq!((page.total, page.events.len()), (120, 50));
         assert_eq!(page.events[0], json!({ "n": 119 }));
-        let last = page_of(events(120), 3);
+        let last = page_of(events(120), &[], 3, 50);
         assert_eq!(last.events.len(), 20);
         assert_eq!(last.events[19], json!({ "n": 0 }));
-        assert!(page_of(events(120), 4).events.is_empty());
+        assert!(page_of(events(120), &[], 4, 50).events.is_empty());
+    }
+
+    #[test]
+    fn page_of_uses_the_page_size_and_the_filters() {
+        assert_eq!(page_of(events(120), &[], 2, 100).events.len(), 20);
+        let filters = [Filter { field: "extra.code".to_string(), value: "5".to_string() }, Filter { field: "level".to_string(), value: "warn".to_string() }];
+        let all = vec![
+            json!({ "level": "warn", "extra": { "code": 5 } }),
+            json!({ "level": "info", "extra": { "code": 5 } }),
+            json!({ "level": "warn", "extra": { "code": 6 } }),
+            json!({ "level": "warn" }),
+            json!({ "level": "warn", "extra": { "code": 5, "query": { "limit": "48" } } }),
+        ];
+        let page = page_of(all.clone(), &filters, 1, 50);
+        assert_eq!((page.total, page.events.len()), (2, 2));
+        let nested = [Filter { field: "extra.query.limit".to_string(), value: "48".to_string() }];
+        assert_eq!(page_of(all, &nested, 1, 50).total, 1);
     }
 
     #[test]

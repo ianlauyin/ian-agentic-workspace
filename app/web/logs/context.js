@@ -1,4 +1,5 @@
 const HIDDEN_FIELDS = ["id"];
+export const PAGE_SIZES = [50, 100, 500, 1000];
 const HKT_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 export function hktToday() {
@@ -32,7 +33,7 @@ export function cellText(event, column) {
 
 // onChange runs after each change of the state, so the page can render again
 export function createLogs(api, onChange = () => {}) {
-  const state = { apps: [], app: "", date: hktToday(), result: null, loading: false, loaded: false, error: "" };
+  const state = { apps: [], app: "", date: hktToday(), pageSize: PAGE_SIZES[0], filters: [], result: null, loading: false, loaded: false, error: "" };
   let requestId = 0;
 
   async function loadApps() {
@@ -56,7 +57,7 @@ export function createLogs(api, onChange = () => {}) {
     state.loading = true;
     onChange();
     try {
-      const result = await api.loadLogs({ app, date, page });
+      const result = await api.loadLogs({ app, date, page, page_size: state.pageSize, filters: JSON.stringify(state.filters) });
       if (id !== requestId) return;
       state.result = { ...result, app, date };
       state.error = "";
@@ -69,5 +70,23 @@ export function createLogs(api, onChange = () => {}) {
     onChange();
   }
 
-  return { state, loadApps, show };
+  const reload = () => show(state.app, state.date, 1);
+
+  // a new filter on a field replaces the old filter on that field
+  function addFilter(field, value) {
+    state.filters = [...state.filters.filter((f) => f.field !== field), { field, value }];
+    return reload();
+  }
+
+  function removeFilter(index) {
+    state.filters = state.filters.filter((_, i) => i !== index);
+    return reload();
+  }
+
+  function setPageSize(pageSize) {
+    state.pageSize = pageSize;
+    return reload();
+  }
+
+  return { state, loadApps, show, reload, addFilter, removeFilter, setPageSize };
 }

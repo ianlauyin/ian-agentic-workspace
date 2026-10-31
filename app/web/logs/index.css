@@ -48,6 +48,42 @@
       font-size: 12px;
     }
 
+    &.logs-page-filters {
+      align-items: center;
+
+      > .field,
+      > .value {
+        width: 200px;
+        padding: 6px 8px;
+      }
+    }
+
+    > .pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+
+      > .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0 4px 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+        font-size: 12px;
+
+        > button {
+          font: inherit;
+          padding: 0 6px;
+          border: 0;
+          background: transparent;
+          color: var(--muted);
+          cursor: pointer;
+        }
+      }
+    }
+
     > .status {
       color: var(--muted);
       font-size: 13px;

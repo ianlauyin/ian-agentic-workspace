@@ -48,7 +48,22 @@ describe("logs", () => {
     await logs.show("my-app", logs.state.date, 2);
     assert.equal(logs.state.result.page, 2);
     await logs.show("other-app", "2026-10-30", 1);
-    assert.deepEqual(fake.calls.at(-1), { app: "other-app", date: "2026-10-30", page: 1 });
+    assert.deepEqual(fake.calls.at(-1), { app: "other-app", date: "2026-10-30", page: 1, page_size: 50, filters: "[]" });
+  });
+
+  it("loads page 1 again when the rows or the filters change", async () => {
+    const fake = fakeApi();
+    const logs = createLogs(fake.api);
+    await logs.loadApps();
+    await logs.show("my-app", logs.state.date, 2);
+    await logs.setPageSize(100);
+    assert.deepEqual([fake.calls.at(-1).page, fake.calls.at(-1).page_size], [1, 100]);
+    await logs.addFilter("level", "warn");
+    await logs.addFilter("level", "error");
+    assert.deepEqual(logs.state.filters, [{ field: "level", value: "error" }]);
+    assert.equal(fake.calls.at(-1).filters, '[{"field":"level","value":"error"}]');
+    await logs.removeFilter(0);
+    assert.equal(fake.calls.at(-1).filters, "[]");
   });
 
   it("keeps the newest answer when an old answer is slow", async () => {
