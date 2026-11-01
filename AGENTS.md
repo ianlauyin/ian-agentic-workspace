@@ -1,21 +1,12 @@
 # Ian's Personal Agentic Workspace
 
-This repo is a workspace for a primary agent. The primary agent gives the work to subagents. Each subagent does its work in a different repo. The primary agent obeys the rules in this workspace.
-
 Before you look up framework logic or code implementation, read `spec/structure.md`. Then read the spec and the code that it points to.
 
-## Roles
+## Work in a different repo
 
-| Agent | Work | Rules |
-| --- | --- | --- |
-| Primary agent | Splits the task, finds the target repo, calls a subagent for each part, does a code review of the changes and reports to the user | The rules in `AGENTS.md` and `rules/` |
-| Subagent | Does one part of the task in one target repo | The instructions of the target repo |
-
-- The primary agent does not edit the code of a different repo. It calls a subagent.
-- The primary agent calls each subagent with Grok 4.7 and high effort.
-- When the primary agent starts a subagent, it does not pass the rules of this workspace.
-- After a subagent changes the code, the primary agent does a code review of the changes in the target repo. The review must find bugs, and code that does not obey the instructions of the target repo.
-- If the review finds a problem, the primary agent does not fix the code. It calls the subagent again to fix the problem. Then it does the review again.
+- To edit the code of a different repo, call a subagent that works in that repo. Do not edit the code yourself.
+- After the subagent changes the code, do a code review of the changes in the target repo. The review must find bugs, and code that does not obey the instructions of the target repo.
+- If the review finds a problem, do not fix the code yourself. Call the subagent again to fix the problem. Then do the review again.
 
 ## Update the workspace
 
@@ -24,7 +15,7 @@ If the user tells you an error or a preference, update the applicable file in th
 - Write the change for all tasks, not only the current task.
 - Before you change a file, read it. Do not write the same instruction two times.
 - If the new instruction and an old instruction are different, replace the old instruction.
-- If the error is in a different repo, call the subagent to change the code.
+- If the error is in a different repo, call the subagent to change the code in that repo.
 
 ## Rules
 

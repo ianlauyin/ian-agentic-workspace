@@ -1,6 +1,6 @@
 # Report
 
-These rules apply to each report file that the primary agent writes in this workspace.
+These rules apply to each report file that the agent writes in this workspace.
 
 ## File
 
