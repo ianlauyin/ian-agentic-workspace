@@ -49,6 +49,25 @@ export function createNotes(api, onChange = () => {}) {
     }
   }
 
+  // the note keeps its id, so its assigned task stays
+  async function editNote(tab, note, text) {
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    const items = (state.notes[tab] ?? []).map((item) => (item.id === note.id ? { ...item, text: trimmed } : item));
+    const next = { ...state.notes, [tab]: items };
+    try {
+      await api.savePage(NOTES_PAGE, next);
+      state.notes = next;
+      state.error = "";
+      onChange();
+      return true;
+    } catch (e) {
+      state.error = `Failed to save: ${e.message}`;
+      onChange();
+      return false;
+    }
+  }
+
   async function removeNote(tab, note) {
     const key = assignKey(tab, note);
     const next = { ...state.notes, [tab]: (state.notes[tab] ?? []).filter((item) => item.id !== note.id) };
@@ -147,5 +166,5 @@ export function createNotes(api, onChange = () => {}) {
     onChange();
   }
 
-  return { state, load, addNote, removeNote, assign, followup, refreshProgress };
+  return { state, load, addNote, editNote, removeNote, assign, followup, refreshProgress };
 }

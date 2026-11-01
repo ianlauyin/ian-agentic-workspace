@@ -60,8 +60,16 @@ export function mount(main, api) {
     view.className = "notes-page-card";
     view.innerHTML = `
       <p class="text"></p>
-      <div class="actions">
+      <form class="edit-form" hidden>
+        <textarea class="g-text-input" rows="3"></textarea>
+        <div class="actions">
+          <button class="g-button" type="submit">Save</button>
+          <button class="g-button cancel" type="button">Cancel</button>
+        </div>
+      </form>
+      <div class="actions view-actions">
         <button class="g-button assign" type="button">Assign task</button>
+        <button class="g-button edit" type="button">Edit</button>
         <button class="g-button remove" type="button">Delete</button>
       </div>
       <p class="assign-chat" hidden></p>
@@ -91,6 +99,29 @@ export function mount(main, api) {
       sending: false,
       shownProgress: null,
     };
+    const editForm = view.querySelector(".edit-form");
+    const editInput = editForm.querySelector("textarea");
+    const viewActions = view.querySelector(".view-actions");
+    const textView = view.querySelector(".text");
+    function setEditing(editing) {
+      editForm.hidden = !editing;
+      viewActions.hidden = editing;
+      textView.hidden = editing;
+      if (editing) {
+        editInput.value = note.text;
+        editInput.focus();
+      }
+    }
+    view.querySelector(".edit").addEventListener("click", () => setEditing(true));
+    view.querySelector(".cancel").addEventListener("click", () => setEditing(false));
+    editInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) editForm.requestSubmit();
+    });
+    // a saved edit changes the note text, so the list builds this card again
+    editForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await notes.editNote(tab, note, editInput.value);
+    });
     card.assignButton.addEventListener("click", () => void notes.assign(tab, note));
     card.removeButton.addEventListener("click", () => void notes.removeNote(tab, note));
     followupInput.addEventListener("input", () => updateCard(card));
@@ -145,10 +176,10 @@ export function mount(main, api) {
     card.followupButton.textContent = card.sending ? "Sending…" : "Send";
   }
 
-  // the cards are built again only when the tab or its notes change, so the follow-up text stays
+  // the cards are built again only when the tab, a note id or a note text changes, so the follow-up text stays
   function renderList() {
     const items = notes.state.notes[selected] ?? [];
-    const keys = `${selected}|${items.map((note) => note.id).join(",")}`;
+    const keys = `${selected}|${items.map((note) => `${note.id}:${note.text}`).join("\u0000")}`;
     if (keys !== shownKeys) {
       shownKeys = keys;
       cards = new Map(items.map((note) => [note.id, noteCard(selected, note)]));

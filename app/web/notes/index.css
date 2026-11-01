@@ -111,6 +111,29 @@
     > .actions {
       display: flex;
       gap: 8px;
+
+      &[hidden] {
+        display: none;
+      }
+    }
+
+    > .text[hidden] {
+      display: none;
+    }
+
+    > .edit-form {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      &[hidden] {
+        display: none;
+      }
+
+      > textarea {
+        resize: vertical;
+        font-size: 14px;
+      }
     }
 
     > .assign-chat {

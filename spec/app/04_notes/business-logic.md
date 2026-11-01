@@ -7,9 +7,11 @@
 - When the page opens, it selects the first tab.
 - Under the tabs, the page shows an input for a new note and an Add button. The Add button is disabled when the text is empty.
 - Add or Cmd+Enter saves the note at the end of the list of the selected tab. The input clears after a successful save.
-- Each note is one card. The card shows the note text, an "Assign task" button, and a Delete button.
+- Each note is one card. The card shows the note text, an "Assign task" button, an Edit button, and a Delete button.
 - A tab with no notes shows "No note."
-- A note is plain text. The note is not changed after it is saved.
+- A note is plain text.
+- Edit replaces the note text on the card with a text input that holds the note text, a Save button and a Cancel button. Save or Cmd+Enter saves the new text in the same place in the list. Cancel closes the input and keeps the text.
+- Save trims the text and does nothing when the text is empty. The note keeps its id and its assigned task. A task that is already started keeps the old text.
 - Delete removes the note and its assigned task.
 
 ## Assign task

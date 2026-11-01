@@ -38,6 +38,20 @@ describe("notes", () => {
     assert.equal(await notes.addNote("my-app", "  "), false);
   });
 
+  it("edits a note and keeps its id and its task", async () => {
+    const fake = fakeApi();
+    const notes = createNotes(fake.api);
+    await notes.load();
+    await notes.addNote("my-app", "Add a route.");
+    const note = notes.state.notes["my-app"][0];
+    await notes.assign("my-app", note);
+    assert.equal(await notes.editNote("my-app", note, "  Add two routes.  "), true);
+    assert.deepEqual(notes.state.notes["my-app"], [{ id: note.id, text: "Add two routes." }]);
+    assert.equal(notes.state.assigns[assignKey("my-app", note)], "chat_1");
+    assert.equal(await notes.editNote("my-app", note, "  "), false);
+    assert.equal(notes.state.notes["my-app"][0].text, "Add two routes.");
+  });
+
   it("assigns a note and saves the chat", async () => {
     const fake = fakeApi();
     const notes = createNotes(fake.api);
