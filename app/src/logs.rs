@@ -145,21 +145,38 @@ fn page_of(mut events: Vec<Value>, filters: &[Filter], page: usize, page_size: u
     LogsPage { page, page_size, total, events }
 }
 
-// a field is a path of keys from the event, such as `extra.query.limit`, and the value is the text of the field
+// a field is a path of keys from the event, such as `info.body.limit`, and the value is the text of the field.
+// a key can hold dots, such as `body.limit` in `info`, so the path can match more than one key at each level
 fn matches(event: &Value, filter: &Filter) -> bool {
-    let mut value = event.clone();
-    for key in filter.field.split('.') {
-        if let Value::String(text) = &value {
-            let Ok(parsed) = serde_json::from_str(text) else { return false };
-            value = parsed;
+    match_path(event, &filter.field, &filter.value)
+}
+
+fn match_path(value: &Value, path: &str, expected: &str) -> bool {
+    if path.is_empty() {
+        return match value {
+            Value::Null => false,
+            Value::String(text) => text == expected,
+            other => other.to_string() == expected,
+        };
+    }
+    let parsed;
+    let value = match value {
+        Value::String(text) => match serde_json::from_str(text) {
+            Ok(json) => {
+                parsed = json;
+                &parsed
+            }
+            Err(_) => return false,
+        },
+        other => other,
+    };
+    let Value::Object(map) = value else { return false };
+    map.iter().any(|(key, child)| {
+        if path == key {
+            return match_path(child, "", expected);
         }
-        value = value[key].clone();
-    }
-    match value {
-        Value::Null => false,
-        Value::String(text) => text == filter.value,
-        other => other.to_string() == filter.value,
-    }
+        path.strip_prefix(key.as_str()).and_then(|rest| rest.strip_prefix('.')).is_some_and(|rest| match_path(child, rest, expected))
+    })
 }
 
 #[cfg(test)]
@@ -186,18 +203,18 @@ mod tests {
     #[test]
     fn page_of_uses_the_page_size_and_the_filters() {
         assert_eq!(page_of(events(120), &[], 2, 100).events.len(), 20);
-        let filters = [Filter { field: "extra.code".to_string(), value: "5".to_string() }, Filter { field: "level".to_string(), value: "warn".to_string() }];
+        let filters = [Filter { field: "info.code".to_string(), value: "5".to_string() }, Filter { field: "level".to_string(), value: "warn".to_string() }];
         let all = vec![
-            json!({ "level": "warn", "extra": { "code": 5 } }),
-            json!({ "level": "info", "extra": { "code": 5 } }),
-            json!({ "level": "warn", "extra": { "code": 6 } }),
+            json!({ "level": "warn", "info": { "code": 5 } }),
+            json!({ "level": "info", "info": { "code": 5 } }),
+            json!({ "level": "warn", "info": { "code": 6 } }),
             json!({ "level": "warn" }),
-            json!({ "level": "warn", "extra": { "code": 5, "query": { "limit": "48" } } }),
+            json!({ "level": "warn", "info": { "code": 5, "body.query.limit": "48" } }),
         ];
         let page = page_of(all.clone(), &filters, 1, 50);
         assert_eq!((page.total, page.events.len()), (2, 2));
-        let nested = [Filter { field: "extra.query.limit".to_string(), value: "48".to_string() }];
-        assert_eq!(page_of(all, &nested, 1, 50).total, 1);
+        let dotted = [Filter { field: "info.body.query.limit".to_string(), value: "48".to_string() }];
+        assert_eq!(page_of(all, &dotted, 1, 50).total, 1);
     }
 
     #[test]

@@ -116,10 +116,6 @@
         text-overflow: ellipsis;
       }
 
-      [data-column="user_agent"] {
-        max-width: 140px;
-      }
-
       th {
         position: sticky;
         top: 0;
@@ -133,6 +129,24 @@
 
       tr.error > td:first-child {
         border-left: 3px solid var(--bad);
+      }
+
+      tr.error > [data-column="level"] {
+        color: var(--bad);
+        font-weight: 600;
+      }
+
+      tr.warn > [data-column="level"] {
+        color: #d19a2a;
+        font-weight: 600;
+      }
+
+      tr.info > [data-column="level"] {
+        color: var(--accent);
+      }
+
+      tr.debug > [data-column="level"] {
+        color: var(--muted);
       }
     }
   }

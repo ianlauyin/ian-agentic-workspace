@@ -2,7 +2,7 @@
 
 ## Layout
 
-- `app/src/logs.rs` holds `GET /logs-apps` and `GET /logs-events`. `read_config` reads `conf/log-server.json`. `read_env_value` reads the key from `.env` at the workspace root. `fetch` runs `curl` and sends the key on stdin with `-H @-`, so the key is not in the process list. `page_of` reverses the events, keeps the events that pass the filters (`matches`, which follows the path of the field), and takes one page.
+- `app/src/logs.rs` holds `GET /logs-apps` and `GET /logs-events`. `read_config` reads `conf/log-server.json`. `read_env_value` reads the key from `.env` at the workspace root. `fetch` runs `curl` and sends the key on stdin with `-H @-`, so the key is not in the process list. `page_of` reverses the events, keeps the events that pass the filters (`matches`, which follows the path of the field and accepts keys that hold dots), and takes one page.
 - `app/web/logs/context.js` holds the apps, the selected app and date, the rows and the filters, the result, the load, `show`, and the actions `reload`, `addFilter`, `removeFilter`, and `setPageSize`. It has no DOM code. `logColumns` and `cellText` make the columns and the cell text. `show` ignores an answer of an old request.
 - `app/web/logs/index.js` builds the page with the DOM API.
 - `app/web/logs/index.css` holds the styles of the page.
