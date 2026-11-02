@@ -10,21 +10,32 @@ export function pageCount(total, pageSize) {
   return Math.max(1, Math.ceil(total / pageSize));
 }
 
-const LAST_FIELDS = ["context", "info"];
+const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
-// each field of an event owns a column, with context and info after the other columns
+// each field of an event owns a column, and each field of the context owns a column too
+// the context columns are after the other columns, and the info column is the last one
 export function logColumns(events) {
   const fields = new Set();
+  const contextFields = new Set();
+  let hasPlainContext = false;
   for (const event of events) {
-    for (const key of Object.keys(event)) if (!HIDDEN_FIELDS.includes(key)) fields.add(key);
+    for (const key of Object.keys(event)) {
+      if (HIDDEN_FIELDS.includes(key) || key === "context" || key === "info") continue;
+      fields.add(key);
+    }
+    if (isObject(event.context)) for (const key of Object.keys(event.context)) contextFields.add(key);
+    else if (event.context !== undefined && event.context !== null) hasPlainContext = true;
   }
-  const keys = [...fields];
-  const ordered = [...keys.filter((key) => !LAST_FIELDS.includes(key)), ...LAST_FIELDS.filter((key) => fields.has(key))];
-  return ordered.map((key) => ({ label: key, key }));
+  const columns = [...fields].map((key) => ({ label: key, key }));
+  if (hasPlainContext) columns.push({ label: "context", key: "context" });
+  for (const sub of contextFields) columns.push({ label: `context.${sub}`, key: "context", sub });
+  if (events.some((event) => "info" in event)) columns.push({ label: "info", key: "info" });
+  return columns;
 }
 
 export function cellText(event, column) {
-  const value = event[column.key];
+  let value = event[column.key];
+  if (column.sub !== undefined) value = isObject(value) ? value[column.sub] : undefined;
   if (value === undefined || value === null) return "";
   if (column.key === "ts") return String(value).slice(0, 19).replace("T", " ");
   return typeof value === "object" ? JSON.stringify(value) : String(value);

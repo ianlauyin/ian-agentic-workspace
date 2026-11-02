@@ -8,7 +8,7 @@
 - The page shows the events of the selected app on the selected date. The newest event is first.
 - Each page has at most the number of events that the rows list gives. A date with no events shows "No log." and "Page 1 of 1 · 0 events".
 - The events are a table. Each event is one row.
-- Each field of an event owns a column. The `context` and `info` fields are one column each, and they show as JSON text. The `context` column is after the other columns. The `info` column is after the `context` column.
+- Each field of an event owns a column. Each field of the `context` object also owns a column, named `context.<field>`. The `context` columns are after the other columns. The `info` field is one column, and it shows as JSON text. The `info` column is the last column. If the `context` of an event is not an object, a `context` column shows its text.
 - The columns are the fields of the events on the shown page, in the order that the page first sees them. A cell is empty when the event has no such field.
 - The page uses the full width of the browser window. It does not have the width limit of the other pages.
 - The `id` field has no column.
@@ -27,7 +27,7 @@
 
 - The first bar of the panel has a date input, a rows list, and a Refresh button. The rows list has 50, 100, 500, and 1000 rows. The default is 50. A change of the rows list selects page 1.
 - Refresh loads page 1 again with the same app, date, rows, and filters.
-- The second bar of the panel has a field input, a value input, and an Add filter button. The field list gives the column names of the events on the shown page. A column name is the first part of a path. The user can type a longer path, such as `context.ip`, to filter on a value inside the `context` or `info` column.
+- The second bar of the panel has a field input, a value input, and an Add filter button. The field list gives the column names of the events on the shown page. A column name is a path, such as `context.ip`. The user can type a longer path to filter on a value deeper inside a column, such as inside the `info` column.
 - A filter is a field and a value. A field is a path of keys that are joined with dots, from the event to a value. A key can hold dots, so a path can match more than one key at each level. The path goes into objects at any depth. When a value on the path is a text that holds JSON, the path goes into that JSON. An event passes a filter when the text of the value at the path is equal to the filter value.
 - An event must pass all filters. The page shows each filter as a pill with a remove button. A new filter on a field replaces the old filter on that field.
 - A filter with no field or no value is not added.

@@ -16,17 +16,19 @@ function fakeApi() {
 }
 
 describe("logs", () => {
-  it("makes a column for each field, with context and info after the others", () => {
+  it("makes a column for each field and each context field, with info last", () => {
     const events = [
       { ts: "t1", id: "i1", level: "info", context: { ip: "1.1.1.1" }, info: { "body.a": 1 } },
       { ts: "t2", action: "API/GET:/x", context: { user_agent: "ua" }, info: { code: 5 } },
     ];
     const columns = logColumns(events);
-    assert.deepEqual(columns.map((c) => c.label), ["ts", "level", "action", "context", "info"]);
-    assert.equal(cellText(events[0], columns[3]), '{"ip":"1.1.1.1"}');
+    assert.deepEqual(columns.map((c) => c.label), ["ts", "level", "action", "context.ip", "context.user_agent", "info"]);
+    assert.equal(cellText(events[0], columns[3]), "1.1.1.1");
+    assert.equal(cellText(events[0], columns[4]), "");
+    assert.equal(cellText(events[1], columns[4]), "ua");
     assert.equal(cellText(events[1], columns[1]), "");
     assert.equal(cellText({ ts: "2026-10-31T22:08:03.077818073+08:00" }, { key: "ts" }), "2026-10-31 22:08:03");
-    assert.equal(cellText(events[1], columns[4]), '{"code":5}');
+    assert.equal(cellText(events[1], columns[5]), '{"code":5}');
   });
 
   it("counts the pages", () => {
