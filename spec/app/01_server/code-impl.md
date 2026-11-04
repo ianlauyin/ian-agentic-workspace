@@ -9,10 +9,10 @@
 - `app/src/logs.rs` holds the `/logs-apps` route and the `/logs-events` route. Refer to `spec/app/05_logs/code-impl.md`.
 - `app/src/db.rs` holds the DB access.
 - `app/web/` is the frontend. It uses plain HTML, JavaScript modules, and CSS. It has no build step and no packages.
-- `app/web/index.html` is the page shell. It has the nav and `main`. The nav is a side panel at the right edge. It slides in when the pointer is at the right edge or the focus is in it.
-- `app/web/index.js` holds the list of the pages and the API client for all routes. It fills the nav and loads the module of the current page. An unknown path goes to `/todo`.
-- `app/web/index.css` holds the color tokens, the styles of the HTML elements, and the UI controls: `g-tab-bar`, `g-button`, and `g-text-input`.
-- Each page is a folder `app/web/<page>/`. Its `index.js` exports `mount(main, api)`, and its `index.css` holds its styles.
+- `app/web/index.html` is the page shell. It has the nav, with a link to each page, and `main`. The nav is a side panel at the right edge. It slides in when the pointer is at the right edge or the focus is in it.
+- `app/web/index.js` holds the list of the pages and the API client for all routes. It routes in the browser: a click on a nav link changes the URL with `history.pushState` and does not reload the document. It loads the CSS and the module of the page first. Then it calls the cleanup of the old page, replaces the old page CSS, and calls `mount`. An unknown path goes to `/todo`.
+- `app/web/index.css` holds the color tokens, the styles of the HTML elements, and the UI controls: `g-nav`, `g-button`, and `g-text-input`.
+- Each page is a folder `app/web/<page>/`. Its `index.js` exports `mount(main, api)`. `mount` returns a cleanup function when the page starts a timer. Its `index.css` holds its styles. The shell loads `index.css`, so `mount` does not.
 - The tests of the frontend are in `app/web/test/`. They use the Node test runner.
 
 ## Persist

@@ -1,8 +1,8 @@
 const PAGES = [
-  { path: "/todo", title: "TODO", module: "/todo/index.js" },
-  { path: "/open-behaviour", title: "Open Behaviour", module: "/open-behaviour/index.js" },
-  { path: "/notes", title: "Notes", module: "/notes/index.js" },
-  { path: "/logs", title: "Logs", module: "/logs/index.js" },
+  { path: "/todo", title: "TODO", module: "/todo/index.js", css: "/todo/index.css" },
+  { path: "/open-behaviour", title: "Open Behaviour", module: "/open-behaviour/index.js", css: "/open-behaviour/index.css" },
+  { path: "/notes", title: "Notes", module: "/notes/index.js", css: "/notes/index.css" },
+  { path: "/logs", title: "Logs", module: "/logs/index.js", css: "/logs/index.css" },
 ];
 const HOME = "/todo";
 
@@ -46,19 +46,51 @@ const api = {
     }),
 };
 
-const page = PAGES.find((p) => p.path === location.pathname);
-if (!page) {
-  location.replace(HOME);
-} else {
-  document.title = page.title;
-  const nav = document.querySelector(".g-nav");
-  for (const p of PAGES) {
-    const link = document.createElement("a");
-    link.href = p.path;
-    link.textContent = p.title;
-    link.classList.toggle("g-on", p === page);
-    nav.append(link);
-  }
-  const { mount } = await import(page.module);
-  mount(document.querySelector("main"), api);
+const nav = document.querySelector(".g-nav");
+const main = document.querySelector("main");
+let unmount;
+let pageStyle;
+let routeId = 0;
+
+function loadStyle(href) {
+  return new Promise((resolve) => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    link.onload = link.onerror = () => resolve(link);
+    document.head.append(link);
+  });
 }
+
+async function route() {
+  const id = ++routeId;
+  const page = PAGES.find((p) => p.path === location.pathname);
+  if (!page) {
+    history.replaceState(null, "", HOME);
+    return route();
+  }
+  document.title = page.title;
+  for (const link of nav.children) link.classList.toggle("g-on", link.pathname === page.path);
+  const [style, { mount }] = await Promise.all([loadStyle(page.css), import(page.module)]);
+  if (id !== routeId) {
+    style.remove();
+    return;
+  }
+  unmount?.();
+  pageStyle?.remove();
+  pageStyle = style;
+  main.replaceChildren();
+  unmount = mount(main, api);
+}
+
+nav.onclick = (e) => {
+  const link = e.target.closest("a");
+  if (!link || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  e.preventDefault();
+  if (link.pathname === location.pathname) return;
+  history.pushState(null, "", link.pathname);
+  void route();
+};
+
+window.onpopstate = () => void route();
+await route();

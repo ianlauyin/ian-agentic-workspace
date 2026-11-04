@@ -1,14 +1,8 @@
 import { createTodo, SECTIONS } from "./context.js";
 
-const CSS = "/todo/index.css";
 const TITLES = { important: "Important", pending: "Pending" };
 
 export function mount(main, api) {
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = CSS;
-  document.head.append(link);
-
   const todo = createTodo(api, render);
   let editing = null;
   let dragFrom = null;

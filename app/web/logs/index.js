@@ -1,13 +1,6 @@
 import { PAGE_SIZES, cellText, createLogs, logColumns, pageCount } from "./context.js";
 
-const CSS = "/logs/index.css";
-
 export function mount(main, api) {
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = CSS;
-  document.head.append(link);
-
   const logs = createLogs(api, render);
 
   main.innerHTML = `

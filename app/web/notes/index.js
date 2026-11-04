@@ -1,6 +1,5 @@
 import { assignKey, createNotes } from "./context.js";
 
-const CSS = "/notes/index.css";
 const PROGRESS_MS = 3000;
 const REPLY_STATUS = ["finished", "stopped"];
 const PROGRESS_STATUS = {
@@ -11,11 +10,6 @@ const PROGRESS_STATUS = {
 };
 
 export function mount(main, api) {
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = CSS;
-  document.head.append(link);
-
   const notes = createNotes(api, render);
   let selected = "";
   let shownTab = "";
@@ -234,5 +228,6 @@ export function mount(main, api) {
 
   render();
   void notes.load().then(notes.refreshProgress);
-  setInterval(() => void notes.refreshProgress(), PROGRESS_MS);
+  const timer = setInterval(() => void notes.refreshProgress(), PROGRESS_MS);
+  return () => clearInterval(timer);
 }

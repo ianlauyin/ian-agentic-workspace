@@ -1,6 +1,5 @@
 import { createOpenBehaviour, decisionKey, groupsByStatus, withKind } from "./context.js";
 
-const CSS = "/open-behaviour/index.css";
 const KINDS = { bug: "Bug", decision: "Needs decision", cleanup: "Cleanup" };
 const PROGRESS_MS = 3000;
 const REPLY_STATUS = ["finished", "stopped"];
@@ -36,11 +35,6 @@ function tags(parent, values) {
 }
 
 export function mount(main, api) {
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = CSS;
-  document.head.append(link);
-
   const behaviour = createOpenBehaviour(api, render);
   const cards = new Map();
   const panels = new Map();
@@ -340,5 +334,6 @@ export function mount(main, api) {
 
   render();
   void behaviour.load().then(behaviour.refreshProgress);
-  setInterval(() => void behaviour.refreshProgress(), PROGRESS_MS);
+  const timer = setInterval(() => void behaviour.refreshProgress(), PROGRESS_MS);
+  return () => clearInterval(timer);
 }
