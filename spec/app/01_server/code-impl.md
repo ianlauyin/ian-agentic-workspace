@@ -13,6 +13,7 @@
 - `app/web/index.js` holds the list of the pages and the API client for all routes. It routes in the browser: a click on a nav link changes the URL with `history.pushState` and does not reload the document. It loads the CSS and the module of the page first. Then it calls the cleanup of the old page, replaces the old page CSS, and calls `mount`. An unknown path goes to `/todo`.
 - `app/web/index.css` holds the color tokens, the styles of the HTML elements, and the UI controls: `g-nav`, `g-button`, and `g-text-input`.
 - Each page is a folder `app/web/<page>/`. Its `index.js` exports `mount(main, api)`. `mount` returns a cleanup function when the page starts a timer. Its `index.css` holds its styles. The shell loads `index.css`, so `mount` does not.
+- The tests of the Rust code are in `app/src/test/`.
 - The tests of the frontend are in `app/web/test/`. They use the Node test runner.
 
 ## Persist

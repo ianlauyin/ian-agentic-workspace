@@ -6,7 +6,7 @@
 - `app/web/logs/context.js` holds the apps, the selected app and date, the rows and the filters, the result, the load, `show`, and the actions `reload`, `addFilter`, `removeFilter`, and `setPageSize`. It has no DOM code. `logColumns` and `cellText` make the columns and the cell text. `show` ignores an answer of an old request.
 - `app/web/logs/index.js` builds the page with the DOM API.
 - `app/web/logs/index.css` holds the styles of the page.
-- The tests are in `app/src/logs.rs` and `app/web/test/logs/context.test.js`.
+- The tests are in `app/src/test/logs.rs` and `app/web/test/logs/context.test.js`.
 
 ## Do not
 

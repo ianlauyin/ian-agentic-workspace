@@ -6,7 +6,7 @@
 - `app/web/notes/context.js` holds the projects, the notes, the assigned tasks, the progress, the load, the add, the edit, the delete, the assign, the follow-up, and the progress load. It has no DOM code. `state.assigns` maps `<tab id>/<note id>` to `"starting"` or to the chat id. `"starting"` is not in the DB. `refreshProgress` and `followup` work as in `app/web/open-behaviour/context.js`.
 - `app/web/notes/index.js` builds the page with the DOM API. It builds the cards again only when the selected tab or its note ids change. Thus, the follow-up text stays.
 - `app/web/notes/index.css` holds the styles of the page.
-- The tests are in `app/src/notes.rs` and `app/web/test/notes/context.test.js`.
+- The tests are in `app/src/test/notes.rs` and `app/web/test/notes/context.test.js`.
 
 ## Persist
 

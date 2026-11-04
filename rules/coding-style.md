@@ -9,7 +9,7 @@
 
 ## Backend (Rust + Axum)
 
-The backend crate is `backend/`.
+The backend crate is `app/`.
 
 - Use JSON for the request and the response. Use a different format only for a route that needs a body that is not JSON: a file upload, a stream or a webhook that has its own format.
 - Do not write doc comments. This includes `///` and `//!`.
@@ -40,6 +40,15 @@ The backend crate is `backend/`.
 ### Tests
 
 - In the tests, do not use a name from a project of the user. This includes repo names, app ids, env variable names, secret names, GCP project ids, service accounts and bucket names. Use generic names: `my-app`, `my-project` and `APP_KEY`.
-- Put the tests in one `#[cfg(test)] mod tests` at the end of the source file that holds the tested item.
-- Keep each test helper in the test module that uses it. If the tests of two or more files use a test-only item, put the item in the `#[cfg(test)] mod tests` of the parent module. The other test modules can use it.
+- Put each test in `app/src/test/`. Do not put a test in the source file of the tested item. The `#[cfg(test)] mod test;` line in `app/src/main.rs` is the only test item in the production code.
+- The folder `app/src/test/` has the same shape as the crate. The tests of `app/src/main.rs` are in `app/src/test/mod.rs`. The tests of `app/src/a/b.rs` are in `app/src/test/a/b.rs`. The tests of `app/src/a/mod.rs` are in `app/src/test/a/mod.rs`. Each test folder has a `mod.rs` that declares its child modules, with the same `#[cfg(feature = "...")]` attributes as the source.
+- A test reaches the tested item with a `crate::` path. When a test needs a private item, change the visibility of the item to `pub(crate)`. Do not use `pub` for this.
+- Keep each test helper in the test file that uses it. If the tests of two or more files use a test-only item, put the item in the `mod.rs` of the parent test folder. The other test files use it with a `crate::test::` path.
 - Keep all test-only code in a test module. This includes test constructors, test-only methods and test doubles. Do not add a `#[cfg(test)]` item to the production code.
+
+## Frontend
+
+The frontend is `app/web/`. It uses plain HTML, JavaScript, and CSS. The source files are in `app/web/`. There is no `app/web/src/` folder.
+
+- Put the tests in `app/web/test/`. Do not put tests in `app/web/src/`.
+- The folder `app/web/test/` has the same shape as the source files in `app/web/`. The test of `app/web/a/b.ts` (or `.js`) is `app/web/test/a/b.test.ts` (or `.test.js`). The test of `app/web/a/index.tsx` is `app/web/test/a/index.test.tsx`. The test of `app/web/a/index.js` is `app/web/test/a/index.test.js`.

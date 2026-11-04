@@ -4,8 +4,8 @@ The app is a local server for the user. It is modeled on the ub-command-center a
 
 ## Rules
 
-- The frontend in `app/web/` uses plain HTML, JavaScript, and CSS. Thus, the app does not obey the "Frontend (SolidJS + TypeScript)" section of `rules/coding-style.md`.
-- The app obeys the other sections of `rules/coding-style.md`.
+- The frontend in `app/web/` uses plain HTML, JavaScript, and CSS.
+- The app obeys `rules/coding-style.md`.
 
 ## Vocab
 

@@ -32,17 +32,17 @@ pub struct LogsRequest {
 }
 
 #[derive(Deserialize)]
-struct Filter {
-    field: String,
-    value: String,
+pub(crate) struct Filter {
+    pub(crate) field: String,
+    pub(crate) value: String,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
 pub struct LogsPage {
     page: usize,
     page_size: usize,
-    total: usize,
-    events: Vec<Value>,
+    pub(crate) total: usize,
+    pub(crate) events: Vec<Value>,
 }
 
 struct Config {
@@ -81,7 +81,7 @@ pub async fn load(Query(req): Query<LogsRequest>) -> Result<Json<LogsPage>, Reso
     Ok(Json(page_of(events, &filters, req.page, page_size)))
 }
 
-fn valid_date(date: &str) -> bool {
+pub(crate) fn valid_date(date: &str) -> bool {
     date.len() == 10 && date.char_indices().all(|(i, c)| if i == 4 || i == 7 { c == '-' } else { c.is_ascii_digit() })
 }
 
@@ -95,7 +95,7 @@ fn read_config(path: &Path) -> Result<Config, String> {
     Ok(Config { base_url: field("base_url")?, key_name, apps })
 }
 
-fn read_env_value(path: &Path, name: &str) -> Result<String, String> {
+pub(crate) fn read_env_value(path: &Path, name: &str) -> Result<String, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("failed to read .env: {e}"))?;
     let value = text.lines().find_map(|line| {
         let line = line.trim().trim_start_matches("export ").trim_start();
@@ -131,13 +131,13 @@ async fn fetch(url: &str, key: &str) -> Result<String, String> {
     }
 }
 
-fn parse_events(body: &str) -> Result<Vec<Value>, String> {
+pub(crate) fn parse_events(body: &str) -> Result<Vec<Value>, String> {
     let json: Value = serde_json::from_str(body).map_err(|e| format!("failed to parse the log server response: {e}"))?;
     json["events"].as_array().cloned().ok_or_else(|| "the log server response has no events".to_string())
 }
 
 // the log server gives the events of a day in the stored order, and the page shows the newest first
-fn page_of(mut events: Vec<Value>, filters: &[Filter], page: usize, page_size: usize) -> LogsPage {
+pub(crate) fn page_of(mut events: Vec<Value>, filters: &[Filter], page: usize, page_size: usize) -> LogsPage {
     events.reverse();
     events.retain(|event| filters.iter().all(|filter| matches(event, filter)));
     let total = events.len();
@@ -180,71 +180,4 @@ fn match_path(value: &Value, path: &str, expected: &str) -> bool {
         }
         path.strip_prefix(key.as_str()).and_then(|rest| rest.strip_prefix('.')).is_some_and(|rest| match_path(child, rest, expected))
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-
-    fn events(count: usize) -> Vec<Value> {
-        (0..count).map(|n| json!({ "n": n })).collect()
-    }
-
-    #[test]
-    fn page_of_gives_the_newest_events_first() {
-        let page = page_of(events(120), &[], 1, 50);
-        assert_eq!((page.total, page.events.len()), (120, 50));
-        assert_eq!(page.events[0], json!({ "n": 119 }));
-        let last = page_of(events(120), &[], 3, 50);
-        assert_eq!(last.events.len(), 20);
-        assert_eq!(last.events[19], json!({ "n": 0 }));
-        assert!(page_of(events(120), &[], 4, 50).events.is_empty());
-    }
-
-    #[test]
-    fn page_of_uses_the_page_size_and_the_filters() {
-        assert_eq!(page_of(events(120), &[], 2, 100).events.len(), 20);
-        let filters = [Filter { field: "info.code".to_string(), value: "5".to_string() }, Filter { field: "level".to_string(), value: "warn".to_string() }];
-        let all = vec![
-            json!({ "level": "warn", "info": { "code": 5 } }),
-            json!({ "level": "info", "info": { "code": 5 } }),
-            json!({ "level": "warn", "info": { "code": 6 } }),
-            json!({ "level": "warn" }),
-            json!({ "level": "warn", "info": { "code": 5, "body.query.limit": "48" } }),
-        ];
-        let page = page_of(all.clone(), &filters, 1, 50);
-        assert_eq!((page.total, page.events.len()), (2, 2));
-        let dotted = [Filter { field: "info.body.query.limit".to_string(), value: "48".to_string() }];
-        assert_eq!(page_of(all, &dotted, 1, 50).total, 1);
-        let text = vec![json!({ "info": "{\"code\":5}" }), json!({ "info": "not json" }), json!({ "info": { "code": null } })];
-        assert_eq!(page_of(text, &filters[..1], 1, 50).total, 1);
-    }
-
-    #[test]
-    fn valid_date_checks_the_format() {
-        assert!(valid_date("2026-10-31"));
-        for date in ["2026-1-31", "2026/10/31", "20261031xx", "../../etc", ""] {
-            assert!(!valid_date(date), "{date}");
-        }
-    }
-
-    #[test]
-    fn read_env_value_finds_the_name() {
-        let path = std::env::temp_dir().join("agentic-workspace-test-logs.env");
-        std::fs::write(&path, "OTHER=1\nexport APP_KEY=\"abc\"\nAPP_KEY_2=x\n").unwrap();
-        assert_eq!(read_env_value(&path, "APP_KEY").unwrap(), "abc");
-        assert!(read_env_value(&path, "MISSING").is_err());
-        std::fs::write(&path, "APP_KEY=\nAPP_KEY_2=''\n").unwrap();
-        assert!(read_env_value(&path, "APP_KEY").is_err());
-        assert!(read_env_value(&path, "APP_KEY_2").is_err());
-    }
-
-    #[test]
-    fn parse_events_needs_the_events_list() {
-        assert_eq!(parse_events(r#"{"events":[{"a":1}]}"#).unwrap().len(), 1);
-        assert!(parse_events(r#"{"x":1}"#).is_err());
-        assert!(parse_events("not json").is_err());
-    }
 }
