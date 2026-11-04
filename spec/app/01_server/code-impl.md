@@ -9,8 +9,8 @@
 - `app/src/logs.rs` holds the `/logs-apps` route and the `/logs-events` route. Refer to `spec/app/05_logs/code-impl.md`.
 - `app/src/db.rs` holds the DB access.
 - `app/web/` is the frontend. It uses plain HTML, JavaScript modules, and CSS. It has no build step and no packages.
-- `app/web/index.html` is the page shell. It has the tab bar and `main`.
-- `app/web/index.js` holds the list of the pages and the API client for all routes. It fills the tab bar and loads the module of the current page. An unknown path goes to `/todo`.
+- `app/web/index.html` is the page shell. It has the nav and `main`. The nav is a side panel at the right edge. It slides in when the pointer is at the right edge or the focus is in it.
+- `app/web/index.js` holds the list of the pages and the API client for all routes. It fills the nav and loads the module of the current page. An unknown path goes to `/todo`.
 - `app/web/index.css` holds the color tokens, the styles of the HTML elements, and the UI controls: `g-tab-bar`, `g-button`, and `g-text-input`.
 - Each page is a folder `app/web/<page>/`. Its `index.js` exports `mount(main, api)`, and its `index.css` holds its styles.
 - The tests of the frontend are in `app/web/test/`. They use the Node test runner.

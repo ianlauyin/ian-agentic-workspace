@@ -16,7 +16,7 @@
 
 - `GET /` and all page paths return `app/web/index.html`.
 - All other `GET` requests return a file from `app/web/`.
-- The tab bar has a link to each page. It marks the current page.
+- The nav has a link to each page. It marks the current page. It is hidden at the right edge of the window and slides in when the pointer is at that edge.
 - An unknown page path in the browser shows `/todo`.
 
 | Page | Description |

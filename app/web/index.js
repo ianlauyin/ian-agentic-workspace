@@ -51,7 +51,7 @@ if (!page) {
   location.replace(HOME);
 } else {
   document.title = page.title;
-  const nav = document.querySelector(".g-tab-bar");
+  const nav = document.querySelector(".g-nav");
   for (const p of PAGES) {
     const link = document.createElement("a");
     link.href = p.path;
