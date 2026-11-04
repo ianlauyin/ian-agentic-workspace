@@ -152,6 +152,36 @@ mod tests {
         let (status, body) = send(&app, followup).await;
         assert_eq!((status, error_of(&body)), (StatusCode::BAD_REQUEST, json!("Bad chat id.")));
 
+        let empty_followup = Request::post("/open-behaviour-followup")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"chat":"local-1","text":"  "}"#))
+            .unwrap();
+        let (status, body) = send(&app, empty_followup).await;
+        assert_eq!((status, error_of(&body)), (StatusCode::BAD_REQUEST, json!("The follow-up has no text.")));
+
+        let empty_resolve = Request::post("/open-behaviour-resolve")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"tab":"my-app","spec":"01_login","id":1,"decision":"  "}"#))
+            .unwrap();
+        let (status, body) = send(&app, empty_resolve).await;
+        assert_eq!((status, error_of(&body)), (StatusCode::BAD_REQUEST, json!("The item has no final decision.")));
+
+        let empty_note = Request::post("/notes-assign")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"tab":"my-app","text":"  "}"#))
+            .unwrap();
+        let (status, body) = send(&app, empty_note).await;
+        assert_eq!((status, error_of(&body)), (StatusCode::BAD_REQUEST, json!("The note has no text.")));
+
+        let (status, body) = send(&app, get("/logs-events?app=my-app&date=2026-10-31&page=0")).await;
+        assert_eq!((status, error_of(&body)), (StatusCode::BAD_REQUEST, json!("Bad page.")));
+
+        let (status, body) = send(&app, get("/logs-events?app=my-app&date=2026-10-31&page=1&page_size=10")).await;
+        assert_eq!((status, error_of(&body)), (StatusCode::BAD_REQUEST, json!("Bad page size.")));
+
+        let (status, body) = send(&app, get("/logs-events?app=my-app&date=2026-10-31&page=1&filters=not-json")).await;
+        assert_eq!((status, error_of(&body)), (StatusCode::BAD_REQUEST, json!("Bad filters.")));
+
         let text = Request::put("/page").body(Body::from(r#"{"name":"a","data":1}"#)).unwrap();
         let (status, body) = send(&app, text).await;
         assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);

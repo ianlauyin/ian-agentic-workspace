@@ -156,7 +156,10 @@ fn match_path(value: &Value, path: &str, expected: &str) -> bool {
         return match value {
             Value::Null => false,
             Value::String(text) => text == expected,
-            other => other.to_string() == expected,
+            other => {
+                let text = other.to_string();
+                text == expected
+            }
         };
     }
     let parsed;
@@ -215,6 +218,8 @@ mod tests {
         assert_eq!((page.total, page.events.len()), (2, 2));
         let dotted = [Filter { field: "info.body.query.limit".to_string(), value: "48".to_string() }];
         assert_eq!(page_of(all, &dotted, 1, 50).total, 1);
+        let text = vec![json!({ "info": "{\"code\":5}" }), json!({ "info": "not json" }), json!({ "info": { "code": null } })];
+        assert_eq!(page_of(text, &filters[..1], 1, 50).total, 1);
     }
 
     #[test]
@@ -231,11 +236,15 @@ mod tests {
         std::fs::write(&path, "OTHER=1\nexport APP_KEY=\"abc\"\nAPP_KEY_2=x\n").unwrap();
         assert_eq!(read_env_value(&path, "APP_KEY").unwrap(), "abc");
         assert!(read_env_value(&path, "MISSING").is_err());
+        std::fs::write(&path, "APP_KEY=\nAPP_KEY_2=''\n").unwrap();
+        assert!(read_env_value(&path, "APP_KEY").is_err());
+        assert!(read_env_value(&path, "APP_KEY_2").is_err());
     }
 
     #[test]
     fn parse_events_needs_the_events_list() {
         assert_eq!(parse_events(r#"{"events":[{"a":1}]}"#).unwrap().len(), 1);
         assert!(parse_events(r#"{"x":1}"#).is_err());
+        assert!(parse_events("not json").is_err());
     }
 }
