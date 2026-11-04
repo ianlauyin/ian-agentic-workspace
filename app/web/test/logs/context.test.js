@@ -31,6 +31,21 @@ describe("logs", () => {
     assert.equal(cellText(events[1], columns[5]), '{"code":5}');
   });
 
+  it("shows plain context text and an empty cell for a null field", () => {
+    const events = [{ id: "i1", level: null, context: "plain" }];
+    const columns = logColumns(events);
+    assert.deepEqual(
+      columns.map((c) => c.label),
+      ["level", "context"],
+    );
+    assert.equal(cellText(events[0], columns[0]), "");
+    assert.equal(cellText(events[0], columns[1]), "plain");
+    assert.deepEqual(
+      logColumns([{ level: "info", context: null }]).map((c) => c.label),
+      ["level"],
+    );
+  });
+
   it("counts the pages", () => {
     assert.equal(pageCount(0, 50), 1);
     assert.equal(pageCount(50, 50), 1);
@@ -85,6 +100,28 @@ describe("logs", () => {
     resolvers[0]();
     await first;
     assert.equal(logs.state.result.page, 2);
+  });
+
+  it("does not load events when there is no app", async () => {
+    let calls = 0;
+    const logs = createLogs({
+      loadLogApps: async () => [],
+      loadLogs: async () => {
+        calls += 1;
+        return { page: 1, page_size: 50, total: 0, events: [] };
+      },
+    });
+    await logs.loadApps();
+    assert.equal(logs.state.app, "");
+    assert.equal(logs.state.loaded, true);
+    assert.equal(calls, 0);
+  });
+
+  it("shows the error when the apps fail to load", async () => {
+    const logs = createLogs({ loadLogApps: async () => { throw new Error("down"); } });
+    await logs.loadApps();
+    assert.equal(logs.state.loaded, false);
+    assert.equal(logs.state.error, "Failed to load the apps: down");
   });
 
   it("shows the error when the load fails", async () => {

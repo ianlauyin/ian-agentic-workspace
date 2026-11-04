@@ -598,8 +598,19 @@ mod tests {
     }
 
     #[test]
-    fn new_chat_is_a_valid_chat_id() {
-        assert!(valid_chat(&new_chat().unwrap()));
+    fn valid_chat_accepts_letters_digits_and_dash() {
+        assert!(valid_chat("local-1"));
+        for chat in ["", "../app", "a.b", "a b", "chat/1"] {
+            assert!(!valid_chat(chat), "{chat}");
+        }
+    }
+
+    #[test]
+    fn project_root_expands_a_home_path_and_keeps_an_other_path() {
+        let home = "/home/user";
+        assert_eq!(project_root(&json!({ "path": "~/my-app" }), home).unwrap(), Path::new(home).join("my-app"));
+        assert_eq!(project_root(&json!({ "path": "/work/my-app" }), home).unwrap(), Path::new("/work/my-app"));
+        assert!(project_root(&json!({}), home).is_none());
     }
 
     fn step(kind: &'static str, text: &str) -> Step {
@@ -694,6 +705,8 @@ mod tests {
     fn local_session_reads_the_last_session_of_the_current_agent() {
         let first = [r#"{"type":"system","subtype":"init","session_id":"s-1"}"#, r#"{"type":"result","is_error":false,"session_id":"s-2"}"#].join("\n");
         assert_eq!(local_session(&first).as_deref(), Some("s-2"));
+        let bad_id = format!("{first}\n{}", r#"{"type":"system","session_id":"../x"}"#);
+        assert_eq!(local_session(&bad_id).as_deref(), Some("s-2"));
         assert_eq!(local_session(&format!("{first}\n{GROK_START}")), None);
         let grok = format!("{first}\n{GROK_START}\n{}", r#"{"type":"system","session_id":"g-1"}"#);
         assert_eq!(local_session(&grok).as_deref(), Some("g-1"));

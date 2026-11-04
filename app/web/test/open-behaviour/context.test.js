@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createOpenBehaviour, decisionKey, groupsByStatus, withKind } from "../../open-behaviour/context.js";
+import { createOpenBehaviour, groupsByStatus, withKind } from "../../open-behaviour/context.js";
 
 const TABS = [
   {
@@ -64,18 +64,6 @@ function fakeApi(saved, tabs = TABS, started = null, progress = {}) {
     failResolves: () => (failResolve = true),
   };
 }
-
-describe("decisionKey", () => {
-  it("makes the key from the tab id, the spec, and the item id", () => {
-    const tab = TABS[0];
-    assert.equal(decisionKey(tab, tab.groups[0], tab.groups[0].items[0]), KEY);
-  });
-
-  it("keeps the package in the spec path", () => {
-    const group = { spec: "site/01_login" };
-    assert.equal(decisionKey(TABS[0], group, { id: 2 }), "my-app/site/01_login/2");
-  });
-});
 
 describe("createOpenBehaviour", () => {
   it("loads the tabs and the saved decisions", async () => {
@@ -424,5 +412,6 @@ describe("withKind", () => {
       ...MIXED,
       groups: [{ ...MIXED.groups[0], items: [MIXED.groups[0].items[0]] }],
     });
+    assert.deepEqual(withKind(MIXED, "other").groups, []);
   });
 });
