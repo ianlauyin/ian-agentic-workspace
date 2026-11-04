@@ -55,24 +55,7 @@ pub async fn save(State(db): State<Arc<Db>>, Json(req): Json<SaveRequest>) -> Re
     db.save_page(&req.name, &req.data).map(Json).map_err(PageError::Db)
 }
 
-fn check_name(name: &str) -> Result<(), PageError> {
+pub(crate) fn check_name(name: &str) -> Result<(), PageError> {
     let ok = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if ok { Ok(()) } else { Err(PageError::BadName) }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn check_name_accepts_letters_digits_and_dash() {
-        assert!(check_name("todo-items-2").is_ok());
-    }
-
-    #[test]
-    fn check_name_rejects_other_names() {
-        for name in ["", "todo_items", "todo items", "../db", "todö"] {
-            assert!(check_name(name).is_err(), "{name}");
-        }
-    }
 }
