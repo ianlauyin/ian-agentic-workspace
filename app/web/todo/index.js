@@ -1,6 +1,6 @@
 import { createTodo, SECTIONS } from "./context.js";
 
-const TITLES = { important: "Important", pending: "Pending" };
+const TITLES = { pending: "Pending", ongoing: "Ongoing", reviewing: "Reviewing" };
 
 export function mount(main, api) {
   const todo = createTodo(api, render);
@@ -10,11 +10,49 @@ export function mount(main, api) {
 
   main.innerHTML = `
     <div id="todo" class="todo-page">
-      <h1>TODO</h1>
+      <div class="header">
+        <h1>TODO</h1>
+        <button class="g-button add-open" type="button" disabled>Add</button>
+      </div>
       <p class="error" hidden></p>
+      <div class="board"></div>
+      <dialog class="add-dialog">
+        <form class="add-form" method="dialog">
+          <h2>New TODO</h2>
+          <input class="g-text-input title" type="text" autocomplete="off" placeholder="Title" required>
+          <textarea class="g-text-input detail" rows="4" placeholder="Detail"></textarea>
+          <label class="deadline">Deadline (optional) <input class="g-text-input" type="date"></label>
+          <span class="actions">
+            <button class="g-button g-danger cancel" type="button">Cancel</button>
+            <button class="g-button" type="submit">Add</button>
+          </span>
+        </form>
+      </dialog>
     </div>`;
   const page = main.querySelector(".todo-page");
   const error = page.querySelector(".error");
+  const board = page.querySelector(".board");
+  const addOpen = page.querySelector(".add-open");
+  const addDialog = page.querySelector(".add-dialog");
+  const addForm = addDialog.querySelector(".add-form");
+  const addTitle = addForm.querySelector("input.title");
+  const addDetail = addForm.querySelector("textarea");
+  const addDeadline = addForm.querySelector("input[type=date]");
+
+  addOpen.addEventListener("click", () => {
+    addForm.reset();
+    addDialog.showModal();
+    addTitle.focus();
+  });
+  addForm.querySelector(".cancel").addEventListener("click", () => addDialog.close());
+  // a click on the backdrop is a click on the dialog itself
+  addDialog.addEventListener("click", (e) => {
+    if (e.target === addDialog) addDialog.close();
+  });
+  addForm.addEventListener("submit", () => {
+    void todo.add("pending", { title: addTitle.value, detail: addDetail.value, deadline: addDeadline.value });
+  });
+
   const sections = Object.fromEntries(SECTIONS.map((section) => [section, sectionView(section)]));
 
   function sectionView(section) {
@@ -22,27 +60,13 @@ export function mount(main, api) {
     view.className = "todo-page-section";
     view.innerHTML = `
       <h2></h2>
-      <form class="add-form">
-        <input class="g-text-input" type="text" autocomplete="off" placeholder="New TODO">
-        <button class="g-button" type="submit" disabled>Add</button>
-      </form>
-      <p class="note" hidden>No TODO yet.</p>
-      <ul class="list" hidden></ul>`;
+      <ul class="list" hidden></ul>
+      <div class="drop-zone">Drop a card here</div>`;
     view.querySelector("h2").textContent = TITLES[section];
-    page.append(view);
-    const form = view.querySelector(".add-form");
-    const input = form.querySelector("input");
-
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      if (!input.value.trim()) return;
-      void todo.add(section, input.value);
-      input.value = "";
-    });
-
+    board.append(view);
     // a drop outside the rows puts the row at the end, so the user can drop on an empty section
     view.addEventListener("dragover", (e) => {
-      if (dragFrom === null || e.target.closest(".todo-page-item-row")) return;
+      if (dragFrom === null || e.target.closest(".todo-page-card")) return;
       e.preventDefault();
       dropTo = { section, gap: todo.state.lists[section].length };
       clearDropMarks();
@@ -56,11 +80,11 @@ export function mount(main, api) {
       clearDropMarks();
     });
 
-    return { addButton: form.querySelector("button"), note: view.querySelector(".note"), list: view.querySelector(".list") };
+    return { list: view.querySelector(".list") };
   }
 
   function clearDropMarks() {
-    for (const row of page.querySelectorAll(".todo-page-item-row")) row.classList.remove("before", "after");
+    for (const row of page.querySelectorAll(".todo-page-card")) row.classList.remove("before", "after");
     for (const view of page.querySelectorAll(".todo-page-section")) view.classList.remove("drop-end");
   }
 
@@ -68,39 +92,48 @@ export function mount(main, api) {
     const { lists, loaded } = todo.state;
     error.textContent = todo.state.error;
     error.hidden = !todo.state.error;
+    addOpen.disabled = !loaded;
     for (const section of SECTIONS) {
-      const { addButton, note, list } = sections[section];
+      const { list } = sections[section];
       const items = lists[section];
-      addButton.disabled = !loaded;
-      note.hidden = !loaded || items.length > 0;
       list.hidden = !loaded || items.length === 0;
       list.replaceChildren(
         ...items.map((item, index) =>
-          editing?.section === section && editing.index === index ? editRow(section, item, index) : itemRow(section, item, index),
+          editing?.section === section && editing.index === index ? editCard(section, item, index) : cardView(section, item, index),
         ),
       );
     }
-    page.querySelector(".todo-page-edit-row input")?.focus();
+    page.querySelector(".todo-page-edit-card input")?.focus();
   }
 
-  function itemRow(section, item, index) {
+  function cardView(section, item, index) {
     const row = document.createElement("li");
-    row.className = "todo-page-item-row";
+    row.className = "todo-page-card";
     row.innerHTML = `
-      <span class="handle" title="Drag to reorder">⋮⋮</span>
-      <span class="text"></span>
-      <span class="actions">
-        <button class="g-button g-small" type="button">Edit</button>
-        <button class="g-button g-small g-danger" type="button">Delete</button>
-      </span>`;
-    row.querySelector(".text").textContent = item.text;
+      <div class="handle" title="Drag to reorder or move">⋮⋮⋮</div>
+      <div class="body">
+        <span class="title"></span>
+        <p class="detail" hidden></p>
+        <p class="deadline" hidden></p>
+        <span class="actions">
+          <button class="g-button g-small" type="button">Edit</button>
+          <button class="g-button g-small g-danger" type="button">Delete</button>
+        </span>
+      </div>`;
+    row.querySelector(".title").textContent = item.title;
+    const detail = row.querySelector(".detail");
+    detail.textContent = item.detail;
+    detail.hidden = !item.detail;
+    const deadline = row.querySelector(".deadline");
+    deadline.textContent = `Deadline: ${item.deadline}`;
+    deadline.hidden = !item.deadline;
     const [editButton, deleteButton] = row.querySelectorAll("button");
     editButton.addEventListener("click", () => {
       editing = { section, index };
       render();
     });
     deleteButton.addEventListener("click", () => {
-      if (confirm(`Delete "${item.text}"?`)) void todo.remove(section, index);
+      if (confirm(`Delete "${item.title}"?`)) void todo.remove(section, index);
     });
 
     // only the handle starts a drag, so the user can still select the text
@@ -109,7 +142,7 @@ export function mount(main, api) {
     handle.addEventListener("mouseup", () => (row.draggable = false));
     row.addEventListener("dragstart", (e) => {
       e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", item.text);
+      e.dataTransfer.setData("text/plain", item.title);
       dragFrom = { section, index };
       row.classList.add("dragging");
     });
@@ -132,21 +165,27 @@ export function mount(main, api) {
     return row;
   }
 
-  function editRow(section, item, index) {
+  function editCard(section, item, index) {
     const row = document.createElement("li");
-    row.className = "todo-page-edit-row";
+    row.className = "todo-page-edit-card";
     row.innerHTML = `
-      <input class="g-text-input" type="text" autocomplete="off">
+      <input class="g-text-input title" type="text" autocomplete="off" placeholder="Title">
+      <textarea class="g-text-input detail" rows="3" placeholder="Detail"></textarea>
+      <label class="deadline">Deadline (optional) <input class="g-text-input" type="date"></label>
       <span class="actions">
         <button class="g-button g-small" type="button">Save</button>
         <button class="g-button g-small g-danger" type="button">Cancel</button>
       </span>`;
-    const text = row.querySelector("input");
-    text.value = item.text;
+    const title = row.querySelector("input.title");
+    const detail = row.querySelector("textarea");
+    const deadline = row.querySelector("input[type=date]");
+    title.value = item.title;
+    detail.value = item.detail;
+    deadline.value = item.deadline;
     const [saveButton, cancelButton] = row.querySelectorAll("button");
 
     async function save() {
-      await todo.edit(section, index, text.value);
+      await todo.edit(section, index, { title: title.value, detail: detail.value, deadline: deadline.value });
       editing = null;
       render();
     }
@@ -155,8 +194,8 @@ export function mount(main, api) {
       render();
     }
 
-    text.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") void save();
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target !== detail) void save();
       if (e.key === "Escape") cancel();
     });
     saveButton.addEventListener("click", () => void save());

@@ -10,3 +10,4 @@ Read this file before you read a feature spec. This file names each spec in this
 - `spec/app/03_open-behaviour.md` gives the `/open-behaviour` page.
 - `spec/app/04_notes.md` gives the `/notes` page.
 - `spec/app/05_logs.md` gives the `/logs` page.
+- `spec/app/06_design-system.md` gives the design system.

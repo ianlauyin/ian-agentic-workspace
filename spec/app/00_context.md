@@ -6,6 +6,7 @@ The app is a local server for the user. It is modeled on the ub-command-center a
 
 - The frontend in `app/web/` uses plain HTML, JavaScript, and CSS.
 - The app obeys `rules/coding-style.md`.
+- The CSS uses the design tokens of `app/web/design-system.css`. It does not use a color, a font family, a radius or a shadow value that is not a token.
 
 ## Vocab
 
@@ -23,3 +24,4 @@ The app is a local server for the user. It is modeled on the ub-command-center a
 - `spec/app/03_open-behaviour.md` gives the `/open-behaviour` page.
 - `spec/app/04_notes.md` gives the `/notes` page.
 - `spec/app/05_logs.md` gives the `/logs` page.
+- `spec/app/06_design-system.md` gives the design system.

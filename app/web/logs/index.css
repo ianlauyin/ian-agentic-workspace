@@ -69,8 +69,8 @@
         gap: 4px;
         padding: 0 4px 0 10px;
         border: 1px solid var(--line);
-        border-radius: 999px;
-        background: var(--panel);
+        border-radius: var(--radius-pill);
+        background: var(--gradient-panel);
         font-size: 12px;
 
         > button {
@@ -101,12 +101,12 @@
 
     > table {
       border-collapse: collapse;
-      background: var(--panel);
+      background: var(--gradient-panel);
       font-size: 12px;
 
       th,
       td {
-        padding: 6px 10px;
+        padding: 10px 14px;
         border: 1px solid var(--line);
         text-align: left;
         vertical-align: top;
@@ -119,7 +119,7 @@
       th {
         position: sticky;
         top: 0;
-        background: var(--panel);
+        background: var(--gradient-panel);
         color: var(--muted);
       }
 
@@ -137,7 +137,7 @@
       }
 
       tr.warn > [data-column="level"] {
-        color: #d19a2a;
+        color: var(--warn);
         font-weight: 600;
       }
 
@@ -155,13 +155,13 @@
     width: min(720px, calc(100vw - 32px));
     max-height: calc(100vh - 64px);
     padding: 12px;
-    background: var(--panel);
+    background: var(--gradient-panel);
     color: var(--text);
     border: 1px solid var(--line);
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
 
     &::backdrop {
-      background: rgb(0 0 0 / 0.5);
+      background: var(--overlay);
     }
 
     > .close {
@@ -171,7 +171,7 @@
 
     > .text {
       margin: 8px 0 0;
-      font: 12px ui-monospace, Menlo, monospace;
+      font: 12px var(--font-mono);
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
