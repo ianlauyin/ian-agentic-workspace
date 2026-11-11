@@ -20,6 +20,8 @@ Write all text in ASD-STE100 (Simplified Technical English).
 
 - The `spec/` folder is only for agents to read. Write each file in it for an agent, not for a human.
 - The exception is `spec/open-behaviour.json`. A human also reads this file. Write it so that a human can understand it.
+- A feature spec is one file `spec/<package>/NN_kebab-name.md` in the package folder.
+- Keep `spec/<package>/00_context.md` in the package folder.
 
 ## Sensitive data
 
