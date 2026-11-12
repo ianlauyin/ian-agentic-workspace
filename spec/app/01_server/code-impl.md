@@ -4,7 +4,7 @@
 
 - `app/src/main.rs` builds the router and starts the server. It also changes each plain-text error of axum and tower-http to JSON.
 - `app/src/page.rs` holds the `/page` routes and the check of the page name.
-- `app/src/open_behaviour.rs` holds the `/open-behaviour-items` route, the `/open-behaviour-resolve` route, the `/open-behaviour-progress` route, and the `/open-behaviour-followup` route. Refer to `spec/app/03_open-behaviour/code-impl.md`.
+- `app/src/open_behaviour.rs` holds the `/open-behaviour-progress` route, the `/open-behaviour-followup` route, and `start_agent`. Refer to `spec/app/04_notes/code-impl.md`.
 - `app/src/notes.rs` holds the `/projects` route and the `/notes-assign` route. Refer to `spec/app/04_notes/code-impl.md`.
 - `app/src/logs.rs` holds the `/logs-apps` route and the `/logs-events` route. Refer to `spec/app/05_logs/code-impl.md`.
 - `app/src/db.rs` holds the DB access.

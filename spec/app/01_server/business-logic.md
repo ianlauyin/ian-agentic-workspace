@@ -23,7 +23,6 @@
 | --- | --- |
 | `GET /` | Shows `/todo`. |
 | `GET /todo` | Shows the TODOs of the user. Refer to `spec/app/02_todo/business-logic.md`. |
-| `GET /open-behaviour` | Shows the open behaviour of each project, the final decisions of the user, and the started resolves. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
 | `GET /notes` | Shows the notes of each project and starts an agent for a note. Refer to `spec/app/04_notes/business-logic.md`. |
 | `GET /logs` | Shows the logs of each app, with pages. Refer to `spec/app/05_logs/business-logic.md`. |
 
@@ -33,10 +32,8 @@
 | --- | --- |
 | `GET /page` | Returns the saved JSON of a page by `name`. If there is no save, returns `null`. |
 | `PUT /page` | Saves the JSON `data` of a page by `name`, and replaces the last save. Returns `null`. |
-| `GET /open-behaviour-items` | Returns the open-behaviour items of each project in `conf/projects.json`. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
-| `POST /open-behaviour-resolve` | Starts an agent that resolves one decided item. Returns `{"chat": "<chat id>"}`. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
-| `GET /open-behaviour-progress` | Returns the progress of the agent of a `chat` as `{"status": "running" \| "finished" \| "failed" \| "stopped", "steps": [{"kind": "message" \| "tool" \| "output" \| "reply", "text": "..."}]}`. A chat id with a character that is not a letter, a digit, or `-` returns 400. A chat with no log returns 400. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
-| `POST /open-behaviour-followup` | Sends `{"chat": "<chat id>", "text": "..."}` to the agent of that chat as a follow-up. Returns the progress, as `GET /open-behaviour-progress` does. A bad chat id, an empty text, a chat with no log, or an agent that still works returns 400. Refer to `spec/app/03_open-behaviour/business-logic.md`. |
+| `GET /open-behaviour-progress` | Returns the progress of the agent of a `chat` as `{"status": "running" \| "finished" \| "failed" \| "stopped", "steps": [{"kind": "message" \| "tool" \| "output" \| "reply", "text": "..."}]}`. A chat id with a character that is not a letter, a digit, or `-` returns 400. A chat with no log returns 400. Refer to `spec/app/04_notes/business-logic.md`. |
+| `POST /open-behaviour-followup` | Sends `{"chat": "<chat id>", "text": "..."}` to the agent of that chat as a follow-up. Returns the progress, as `GET /open-behaviour-progress` does. A bad chat id, an empty text, a chat with no log, or an agent that still works returns 400. Refer to `spec/app/04_notes/business-logic.md`. |
 | `GET /projects` | Returns `[{"id": "<project>", "name": "<project>"}]` for the projects in `conf/projects.json`. Refer to `spec/app/04_notes/business-logic.md`. |
 | `POST /notes-assign` | Starts an agent in the folder of project `tab` with the note `text` as the task. Returns `{"chat": "<chat id>"}`. An empty text or an unknown project returns 400. Refer to `spec/app/04_notes/business-logic.md`. |
 | `GET /logs-apps` | Returns `[{"id": "<app>", "name": "<app>"}]` for the apps in `conf/log-server.json`. Refer to `spec/app/05_logs/business-logic.md`. |

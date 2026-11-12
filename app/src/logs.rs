@@ -53,7 +53,16 @@ struct Config {
 
 pub async fn apps() -> Result<Json<Vec<LogApp>>, ResolveError> {
     let config = read_config(Path::new(CONFIG_FILE)).map_err(ResolveError::Failed)?;
-    Ok(Json(config.apps.into_iter().map(|(id, _)| LogApp { name: id.clone(), id }).collect()))
+    Ok(Json(
+        config
+            .apps
+            .into_iter()
+            .map(|(id, _)| LogApp {
+                name: id.clone(),
+                id,
+            })
+            .collect(),
+    ))
 }
 
 pub async fn load(Query(req): Query<LogsRequest>) -> Result<Json<LogsPage>, ResolveError> {
@@ -73,26 +82,63 @@ pub async fn load(Query(req): Query<LogsRequest>) -> Result<Json<LogsPage>, Reso
         None => Vec::new(),
     };
     let config = read_config(Path::new(CONFIG_FILE)).map_err(ResolveError::Failed)?;
-    let server_app = config.apps.iter().find(|(id, _)| *id == req.app).map(|(_, name)| name).ok_or_else(|| bad("Unknown app."))?;
-    let key = read_env_value(Path::new(ENV_FILE), &config.key_name).map_err(ResolveError::Failed)?;
-    let url = format!("{}/log/{}?date={}&limit={DAY_LIMIT}", config.base_url.trim_end_matches('/'), server_app, req.date);
+    let server_app = config
+        .apps
+        .iter()
+        .find(|(id, _)| *id == req.app)
+        .map(|(_, name)| name)
+        .ok_or_else(|| bad("Unknown app."))?;
+    let key =
+        read_env_value(Path::new(ENV_FILE), &config.key_name).map_err(ResolveError::Failed)?;
+    let url = format!(
+        "{}/log/{}?date={}&limit={DAY_LIMIT}",
+        config.base_url.trim_end_matches('/'),
+        server_app,
+        req.date
+    );
     let body = fetch(&url, &key).await.map_err(ResolveError::Failed)?;
     let events = parse_events(&body).map_err(ResolveError::Failed)?;
     Ok(Json(page_of(events, &filters, req.page, page_size)))
 }
 
 pub(crate) fn valid_date(date: &str) -> bool {
-    date.len() == 10 && date.char_indices().all(|(i, c)| if i == 4 || i == 7 { c == '-' } else { c.is_ascii_digit() })
+    date.len() == 10
+        && date.char_indices().all(|(i, c)| {
+            if i == 4 || i == 7 {
+                c == '-'
+            } else {
+                c.is_ascii_digit()
+            }
+        })
 }
 
 fn read_config(path: &Path) -> Result<Config, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("failed to read conf/log-server.json: {e}"))?;
-    let json: Value = serde_json::from_str(&text).map_err(|e| format!("failed to parse conf/log-server.json: {e}"))?;
-    let field = |name: &str| json[name].as_str().map(str::to_string).ok_or_else(|| format!("conf/log-server.json has no {name}"));
-    let key_name = field("api_key")?.strip_prefix("env:").map(str::to_string).ok_or("api_key in conf/log-server.json is not env:NAME")?;
-    let apps = json["apps"].as_object().ok_or("conf/log-server.json has no apps")?;
-    let apps = apps.iter().filter_map(|(id, name)| Some((id.clone(), name.as_str()?.to_string()))).collect();
-    Ok(Config { base_url: field("base_url")?, key_name, apps })
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("failed to read conf/log-server.json: {e}"))?;
+    let json: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("failed to parse conf/log-server.json: {e}"))?;
+    let field = |name: &str| {
+        json[name]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| format!("conf/log-server.json has no {name}"))
+    };
+    let key_name = field("api_key")?
+        .strip_prefix("env:")
+        .map(str::to_string)
+        .ok_or("api_key in conf/log-server.json is not env:NAME")?;
+    let apps = json["apps"]
+        .as_object()
+        .ok_or("conf/log-server.json has no apps")?;
+    let apps = apps
+        .iter()
+        .filter_map(|(id, name)| Some((id.clone(), name.as_str()?.to_string())))
+        .collect();
+    Ok(Config {
+        base_url: field("base_url")?,
+        key_name,
+        apps,
+    })
 }
 
 pub(crate) fn read_env_value(path: &Path, name: &str) -> Result<String, String> {
@@ -102,27 +148,49 @@ pub(crate) fn read_env_value(path: &Path, name: &str) -> Result<String, String> 
         let value = line.strip_prefix(name)?.trim_start().strip_prefix('=')?;
         Some(value.trim().trim_matches(['"', '\'']).to_string())
     });
-    value.filter(|v| !v.is_empty()).ok_or_else(|| format!("{name} has no value in .env"))
+    value
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| format!("{name} has no value in .env"))
 }
 
 // the key goes to curl on stdin, so it is not in the process list
 async fn fetch(url: &str, key: &str) -> Result<String, String> {
     let mut child = Command::new("curl")
-        .args(["-sS", "--max-time", FETCH_SECONDS, "-H", "@-", "-w", "\n%{http_code}", url])
+        .args([
+            "-sS",
+            "--max-time",
+            FETCH_SECONDS,
+            "-H",
+            "@-",
+            "-w",
+            "\n%{http_code}",
+            url,
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("failed to start curl: {e}"))?;
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(format!("Authorization: Bearer {key}\n").as_bytes()).await.map_err(|e| format!("failed to send the key to curl: {e}"))?;
+        stdin
+            .write_all(format!("Authorization: Bearer {key}\n").as_bytes())
+            .await
+            .map_err(|e| format!("failed to send the key to curl: {e}"))?;
     }
-    let out = child.wait_with_output().await.map_err(|e| format!("curl failed: {e}"))?;
+    let out = child
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("curl failed: {e}"))?;
     if !out.status.success() {
-        return Err(format!("failed to reach the log server: {}", String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(format!(
+            "failed to reach the log server: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
     let text = String::from_utf8_lossy(&out.stdout);
-    let (body, status) = text.rsplit_once('\n').ok_or("the log server gave no status")?;
+    let (body, status) = text
+        .rsplit_once('\n')
+        .ok_or("the log server gave no status")?;
     match status {
         "200" => Ok(body.to_string()),
         "401" => Err("The log server key is not correct.".to_string()),
@@ -132,17 +200,35 @@ async fn fetch(url: &str, key: &str) -> Result<String, String> {
 }
 
 pub(crate) fn parse_events(body: &str) -> Result<Vec<Value>, String> {
-    let json: Value = serde_json::from_str(body).map_err(|e| format!("failed to parse the log server response: {e}"))?;
-    json["events"].as_array().cloned().ok_or_else(|| "the log server response has no events".to_string())
+    let json: Value = serde_json::from_str(body)
+        .map_err(|e| format!("failed to parse the log server response: {e}"))?;
+    json["events"]
+        .as_array()
+        .cloned()
+        .ok_or_else(|| "the log server response has no events".to_string())
 }
 
 // the log server gives the events of a day in the stored order, and the page shows the newest first
-pub(crate) fn page_of(mut events: Vec<Value>, filters: &[Filter], page: usize, page_size: usize) -> LogsPage {
+pub(crate) fn page_of(
+    mut events: Vec<Value>,
+    filters: &[Filter],
+    page: usize,
+    page_size: usize,
+) -> LogsPage {
     events.reverse();
     events.retain(|event| filters.iter().all(|filter| matches(event, filter)));
     let total = events.len();
-    let events = events.into_iter().skip((page - 1) * page_size).take(page_size).collect();
-    LogsPage { page, page_size, total, events }
+    let events = events
+        .into_iter()
+        .skip((page - 1) * page_size)
+        .take(page_size)
+        .collect();
+    LogsPage {
+        page,
+        page_size,
+        total,
+        events,
+    }
 }
 
 // a field is a path of keys from the event, such as `info.body.limit`, and the value is the text of the field.
@@ -173,11 +259,15 @@ fn match_path(value: &Value, path: &str, expected: &str) -> bool {
         },
         other => other,
     };
-    let Value::Object(map) = value else { return false };
+    let Value::Object(map) = value else {
+        return false;
+    };
     map.iter().any(|(key, child)| {
         if path == key {
             return match_path(child, "", expected);
         }
-        path.strip_prefix(key.as_str()).and_then(|rest| rest.strip_prefix('.')).is_some_and(|rest| match_path(child, rest, expected))
+        path.strip_prefix(key.as_str())
+            .and_then(|rest| rest.strip_prefix('.'))
+            .is_some_and(|rest| match_path(child, rest, expected))
     })
 }
