@@ -16,7 +16,7 @@
 
 ## Assign task
 
-- The Assign task button starts one local Cursor agent in the local project folder of the tab. It uses the same agents as the Resolve button of `spec/app/03_open-behaviour/business-logic.md`: the first agent, the Grok agent when the first agent fails, the progress, and the follow-up.
+- The Assign task button starts one local Cursor agent in the local project folder of the tab. It uses the same agents as the Resolve button of `spec/app/03_open-behaviour.md`: the first agent, the Grok agent when the first agent fails, the progress, and the follow-up.
 - The prompt gives the project, the project path, and the note text as the task, and tells the agent to obey `AGENTS.md`.
 - After the start, the button shows "Assigned" and stays disabled. The card shows the chat id and the progress. A reload keeps this state.
 - When the progress gives the status "the agent failed", the page removes the assigned task. The button shows "Assign task" again.

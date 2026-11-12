@@ -12,7 +12,7 @@
 - When the page opens, it selects the first tab that has items. If no tab has items, it selects the first tab.
 - The page shows the items of the selected tab grouped by spec entry, in the order of the source. A saved final decision does not move the item.
 - A group with no item of the selected kind is not shown.
-- Each group shows the spec title, the spec folder path, and the context of the entry.
+- Each group shows the spec title, the spec file path, and the context of the entry.
 - A tab with no items shows "No open item."
 - Under the title, the page shows the number of decided items and the number of all items in the selected tab.
 
@@ -68,9 +68,9 @@ Each item is one card. The card has these parts, in this order:
 
 ## Persist
 
-- The page loads the tabs with `GET /open-behaviour-items`. Refer to `spec/app/01_server/business-logic.md`.
+- The page loads the tabs with `GET /open-behaviour-items`. Refer to `spec/app/01_server.md`.
 - Each save writes all final decisions with `PUT /page`, as `open-behaviour-decisions`.
-- The key of a decision is `<tab id>/<spec>/<item id>`. `<spec>` is the `spec` field of the entry, as `<package>/NN_name`. The data is `{"<key>": "<decision>"}`.
+- The key of a decision is `<tab id>/<spec>/<item id>`. `<spec>` is the `spec` field of the entry, as `<package>/NN_kebab-name.md`. The data is `{"<key>": "<decision>"}`.
 - When the page opens, it loads `open-behaviour-decisions` with `GET /page`.
 - Each successful resolve writes all started resolves with `PUT /page`, as `open-behaviour-resolves`.
 - The key of a resolve is the same as the key of a decision. The data is `{"<key>": "<chat id>"}`.
