@@ -1,6 +1,6 @@
 # Ian's Personal Agentic Workspace
 
-Before you look up framework logic or code implementation, read `spec/<package>/00_context.md` when the package folder has that file, and read the feature spec `spec/<package>/NN_kebab-name.md`. Then read the code that the spec points to.
+Before you look up business logic, read spec/catalog.md for the specification index.
 
 ## Work in a different repo
 
