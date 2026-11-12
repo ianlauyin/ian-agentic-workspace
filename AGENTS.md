@@ -1,6 +1,6 @@
 # Ian's Personal Agentic Workspace
 
-Before you look up framework logic or code implementation, read `spec/catalog.md`. Then read the spec that `spec/catalog.md` names for that code, and the code that the spec points to.
+Before you look up business logic, read spec/catalog.md for the specification index.
 
 ## Work in a different repo
 
