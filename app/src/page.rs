@@ -45,14 +45,22 @@ impl fmt::Display for PageError {
     }
 }
 
-pub async fn load(State(db): State<Arc<Db>>, Query(req): Query<LoadRequest>) -> Result<Json<Value>, PageError> {
+pub async fn load(
+    State(db): State<Arc<Db>>,
+    Query(req): Query<LoadRequest>,
+) -> Result<Json<Value>, PageError> {
     check_name(&req.name)?;
     db.load_page(&req.name).map(Json).map_err(PageError::Db)
 }
 
-pub async fn save(State(db): State<Arc<Db>>, Json(req): Json<SaveRequest>) -> Result<Json<()>, PageError> {
+pub async fn save(
+    State(db): State<Arc<Db>>,
+    Json(req): Json<SaveRequest>,
+) -> Result<Json<()>, PageError> {
     check_name(&req.name)?;
-    db.save_page(&req.name, &req.data).map(Json).map_err(PageError::Db)
+    db.save_page(&req.name, &req.data)
+        .map(Json)
+        .map_err(PageError::Db)
 }
 
 pub(crate) fn check_name(name: &str) -> Result<(), PageError> {

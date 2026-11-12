@@ -1,6 +1,5 @@
 const PAGES = [
   { path: "/todo", title: "TODO", module: "/todo/index.js", css: "/todo/index.css" },
-  { path: "/open-behaviour", title: "Open Behaviour", module: "/open-behaviour/index.js", css: "/open-behaviour/index.css" },
   { path: "/notes", title: "Notes", module: "/notes/index.js", css: "/notes/index.css" },
   { path: "/logs", title: "Logs", module: "/logs/index.js", css: "/logs/index.css" },
 ];
@@ -23,13 +22,6 @@ const api = {
     }),
   loadLogApps: () => request("/logs-apps"),
   loadLogs: (params) => request(`/logs-events?${new URLSearchParams(params)}`),
-  loadOpenBehaviour: () => request("/open-behaviour-items"),
-  resolveOpenBehaviour: (body) =>
-    request("/open-behaviour-resolve", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }),
   loadResolveProgress: (chat) => request(`/open-behaviour-progress?${new URLSearchParams({ chat })}`),
   followupResolve: (chat, text) =>
     request("/open-behaviour-followup", {

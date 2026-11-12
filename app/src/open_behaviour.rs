@@ -14,7 +14,6 @@ use serde_json::{Map, Value, json};
 use tokio::process::Command;
 
 pub const PROJECTS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../conf/projects.json");
-const FILE_PATH: &str = "spec/open-behaviour.json";
 const LOG_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/resolve");
 const TOOL_DETAILS: [&str; 6] = ["command", "path", "pattern", "globPattern", "query", "url"];
 const LOCAL_BIN: &str = "cursor-agent";
@@ -24,22 +23,6 @@ pub(crate) const GROK_START: &str = "The local agent failed. A local Grok agent 
 const FOLLOWUP_MARK: &str = "\"type\":\"followup\"";
 
 static LOCAL_LOCK: Mutex<()> = Mutex::new(());
-
-#[derive(Serialize)]
-pub struct Tab {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) groups: Vec<Value>,
-    pub(crate) errors: Vec<String>,
-}
-
-#[derive(Deserialize)]
-pub struct ResolveRequest {
-    pub(crate) tab: String,
-    pub(crate) spec: String,
-    pub(crate) id: u64,
-    pub(crate) decision: String,
-}
 
 #[derive(Serialize)]
 pub struct ResolveStart {
@@ -75,14 +58,6 @@ pub struct Step {
     pub(crate) text: String,
 }
 
-pub struct LoadError(String);
-
-impl IntoResponse for LoadError {
-    fn into_response(self) -> Response {
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": self.0 }))).into_response()
-    }
-}
-
 pub enum ResolveError {
     BadItem(String),
     Failed(String),
@@ -96,24 +71,6 @@ impl IntoResponse for ResolveError {
         };
         (status, Json(json!({ "error": msg }))).into_response()
     }
-}
-
-pub async fn load() -> Result<Json<Vec<Tab>>, LoadError> {
-    let home = std::env::var("HOME").unwrap_or_default();
-    load_tabs(Path::new(PROJECTS_FILE), &home).map(Json).map_err(LoadError)
-}
-
-pub async fn resolve(Json(req): Json<ResolveRequest>) -> Result<Json<ResolveStart>, ResolveError> {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let decision = req.decision.trim();
-    if decision.is_empty() {
-        return Err(ResolveError::BadItem("The item has no final decision.".to_string()));
-    }
-    let projects = read_projects(Path::new(PROJECTS_FILE)).map_err(ResolveError::Failed)?;
-    let (root, item) = find_item(&projects, &home, &req)?;
-    let prompt = local_prompt(&req, &root, &item, decision);
-    let chat = start_agent(&root, &prompt).map_err(ResolveError::Failed)?;
-    Ok(Json(ResolveStart { chat }))
 }
 
 pub async fn progress(Query(req): Query<ProgressRequest>) -> Result<Json<Progress>, ResolveError> {
@@ -155,17 +112,34 @@ fn failed_end(text: &str) -> String {
 // the lock keeps one local agent for each chat when two follow-ups arrive at the same time
 fn followup_local(log_path: &Path, text: &str) -> Result<(), ResolveError> {
     let failed = |msg: String| ResolveError::Failed(msg);
-    let _guard = LOCAL_LOCK.lock().map_err(|_| failed("failed to lock the local agent".to_string()))?;
+    let _guard = LOCAL_LOCK
+        .lock()
+        .map_err(|_| failed("failed to lock the local agent".to_string()))?;
     let log = read_log(log_path);
     if !log_has_end(last_run(&log)) {
-        return Err(ResolveError::BadItem("The agent is still working.".to_string()));
+        return Err(ResolveError::BadItem(
+            "The agent is still working.".to_string(),
+        ));
     }
-    let session = local_session(&log).ok_or_else(|| failed("The local agent has no session.".to_string()))?;
-    let model = if log.contains(GROK_START) { GROK_MODEL } else { LOCAL_MODEL };
+    let session =
+        local_session(&log).ok_or_else(|| failed("The local agent has no session.".to_string()))?;
+    let model = if log.contains(GROK_START) {
+        GROK_MODEL
+    } else {
+        LOCAL_MODEL
+    };
     let root_path = log_path.with_extension("root");
-    let root = fs::read_to_string(&root_path).map_err(|e| failed(format!("failed to read {}: {e}", root_path.display())))?;
+    let root = fs::read_to_string(&root_path)
+        .map_err(|e| failed(format!("failed to read {}: {e}", root_path.display())))?;
     append_line(log_path, &followup_line(text)).map_err(failed)?;
-    if let Err(error) = spawn_local(text, Path::new(root.trim()), log_path, model, Some(&session), false) {
+    if let Err(error) = spawn_local(
+        text,
+        Path::new(root.trim()),
+        log_path,
+        model,
+        Some(&session),
+        false,
+    ) {
         append_line(log_path, &error).map_err(failed)?;
         append_end(log_path, &failed_end("The follow-up failed.")).map_err(failed)?;
     }
@@ -193,9 +167,11 @@ pub fn start_agent(root: &Path, prompt: &str) -> Result<String, String> {
         .open(&log_path)
         .map_err(|e| format!("failed to create {}: {e}", log_path.display()))?;
     let prompt_path = log_path.with_extension("prompt");
-    fs::write(&prompt_path, prompt).map_err(|e| format!("failed to create {}: {e}", prompt_path.display()))?;
+    fs::write(&prompt_path, prompt)
+        .map_err(|e| format!("failed to create {}: {e}", prompt_path.display()))?;
     let root_path = log_path.with_extension("root");
-    fs::write(&root_path, root.to_string_lossy().as_bytes()).map_err(|e| format!("failed to create {}: {e}", root_path.display()))?;
+    fs::write(&root_path, root.to_string_lossy().as_bytes())
+        .map_err(|e| format!("failed to create {}: {e}", root_path.display()))?;
     if let Err(error) = spawn_local(prompt, root, &log_path, LOCAL_MODEL, None, true) {
         append_line(&log_path, &error)?;
         if !start_local(&log_path, GROK_START, GROK_MODEL) {
@@ -206,7 +182,9 @@ pub fn start_agent(root: &Path, prompt: &str) -> Result<String, String> {
 }
 
 fn new_chat() -> Result<String, String> {
-    let time = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| format!("failed to read the time: {e}"))?;
+    let time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("failed to read the time: {e}"))?;
     Ok(format!("local-{}", time.as_nanos()))
 }
 
@@ -216,16 +194,29 @@ pub(crate) fn valid_chat(chat: &str) -> bool {
 
 // the lock and the start line in the log keep one agent for each stage, also after a server restart
 fn start_local(log_path: &Path, start: &str, model: &str) -> bool {
-    let Ok(_guard) = LOCAL_LOCK.lock() else { return false };
+    let Ok(_guard) = LOCAL_LOCK.lock() else {
+        return false;
+    };
     if read_log(log_path).contains(start) {
         return true;
     }
     if append_line(log_path, start).is_err() {
         return false;
     }
-    let Ok(prompt) = fs::read_to_string(log_path.with_extension("prompt")) else { return false };
-    let Ok(root) = fs::read_to_string(log_path.with_extension("root")) else { return false };
-    match spawn_local(&prompt, Path::new(root.trim()), log_path, model, None, false) {
+    let Ok(prompt) = fs::read_to_string(log_path.with_extension("prompt")) else {
+        return false;
+    };
+    let Ok(root) = fs::read_to_string(log_path.with_extension("root")) else {
+        return false;
+    };
+    match spawn_local(
+        &prompt,
+        Path::new(root.trim()),
+        log_path,
+        model,
+        None,
+        false,
+    ) {
         Ok(()) => true,
         Err(error) => {
             let _ = append_line(log_path, &error);
@@ -236,13 +227,35 @@ fn start_local(log_path: &Path, start: &str, model: &str) -> bool {
 
 // a session id resumes the conversation of an earlier local agent
 // fallback starts the Grok agent when this agent fails
-fn spawn_local(prompt: &str, root: &Path, log_path: &Path, model: &str, session: Option<&str>, fallback: bool) -> Result<(), String> {
-    let root = fs::canonicalize(root).map_err(|e| format!("failed to open {}: {e}", root.display()))?;
-    let log = fs::OpenOptions::new().append(true).open(log_path).map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
-    let err_log = log.try_clone().map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
+fn spawn_local(
+    prompt: &str,
+    root: &Path,
+    log_path: &Path,
+    model: &str,
+    session: Option<&str>,
+    fallback: bool,
+) -> Result<(), String> {
+    let root =
+        fs::canonicalize(root).map_err(|e| format!("failed to open {}: {e}", root.display()))?;
+    let log = fs::OpenOptions::new()
+        .append(true)
+        .open(log_path)
+        .map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
+    let err_log = log
+        .try_clone()
+        .map_err(|e| format!("failed to open {}: {e}", log_path.display()))?;
     let mut command = Command::new(LOCAL_BIN);
     command
-        .args(["--print", "--output-format", "stream-json", "--force", "--trust", "--model", model, "--workspace"])
+        .args([
+            "--print",
+            "--output-format",
+            "stream-json",
+            "--force",
+            "--trust",
+            "--model",
+            model,
+            "--workspace",
+        ])
         .arg(&root);
     if let Some(session) = session {
         command.args(["--resume", session]);
@@ -260,7 +273,10 @@ fn spawn_local(prompt: &str, root: &Path, log_path: &Path, model: &str, session:
     let log_path = log_path.to_path_buf();
     tokio::spawn(async move {
         let code = child.wait().await.ok().and_then(|status| status.code());
-        let _ = append_line(&log_path, &json!({ "type": "exit", "code": code }).to_string());
+        let _ = append_line(
+            &log_path,
+            &json!({ "type": "exit", "code": code }).to_string(),
+        );
         if fallback {
             start_grok_after_fail(&log_path);
         }
@@ -271,14 +287,20 @@ fn spawn_local(prompt: &str, root: &Path, log_path: &Path, model: &str, session:
 // a follow-up run does not start the Grok agent
 pub(crate) fn start_grok_after_fail(log_path: &Path) {
     let log = read_log(log_path);
-    if !log.contains(FOLLOWUP_MARK) && local_failed(last_run(&log)) && !start_local(log_path, GROK_START, GROK_MODEL) {
+    if !log.contains(FOLLOWUP_MARK)
+        && local_failed(last_run(&log))
+        && !start_local(log_path, GROK_START, GROK_MODEL)
+    {
         let _ = append_end(log_path, &failed_end("The agent failed."));
     }
 }
 
 // the first end of the run tells: a failed result, or an exit with an error code before a result
 pub(crate) fn local_failed(run: &str) -> bool {
-    for event in run.lines().filter_map(|line| serde_json::from_str::<Value>(line).ok()) {
+    for event in run
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+    {
         match event["type"].as_str() {
             Some("result") => return event["is_error"] == true,
             Some("exit") => return event["code"].as_i64().is_some_and(|code| code != 0),
@@ -293,7 +315,10 @@ pub(crate) fn read_log(path: &Path) -> String {
 }
 
 pub(crate) fn log_has_end(log: &str) -> bool {
-    log.contains("\"type\":\"result\"") || log.contains("\"type\": \"result\"") || log.contains("\"type\":\"exit\"") || log.contains("\"type\": \"exit\"")
+    log.contains("\"type\":\"result\"")
+        || log.contains("\"type\": \"result\"")
+        || log.contains("\"type\":\"exit\"")
+        || log.contains("\"type\": \"exit\"")
 }
 
 // a follow-up and the Grok agent start a new run, so only the lines after the last start tell if the agent ended
@@ -313,7 +338,11 @@ fn append_end(path: &Path, line: &str) -> Result<(), String> {
 }
 
 fn append_line(path: &Path, line: &str) -> Result<(), String> {
-    let mut file = fs::OpenOptions::new().create(true).append(true).open(path).map_err(|e| format!("failed to open {}: {e}", path.display()))?;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| format!("failed to open {}: {e}", path.display()))?;
     writeln!(file, "{line}").map_err(|e| format!("failed to write {}: {e}", path.display()))
 }
 
@@ -331,21 +360,33 @@ pub(crate) fn read_progress(log: &str) -> Progress {
             local_failed = false;
         }
         let Ok(event) = serde_json::from_str::<Value>(line) else {
-            steps.push(Step { kind: "output", text: line.to_string() });
+            steps.push(Step {
+                kind: "output",
+                text: line.to_string(),
+            });
             continue;
         };
         match (event["type"].as_str(), event["subtype"].as_str()) {
             (Some("assistant"), _) => {
                 let text = message_text(&event);
                 if !text.is_empty() {
-                    steps.push(Step { kind: "message", text });
+                    steps.push(Step {
+                        kind: "message",
+                        text,
+                    });
                 }
             }
-            (Some("tool_call"), Some("started")) => steps.push(Step { kind: "tool", text: tool_text(&event["tool_call"]) }),
+            (Some("tool_call"), Some("started")) => steps.push(Step {
+                kind: "tool",
+                text: tool_text(&event["tool_call"]),
+            }),
             (Some("followup"), _) => {
                 status = "running";
                 waits_grok = false;
-                steps.push(Step { kind: "reply", text: event["text"].as_str().unwrap_or("").to_string() });
+                steps.push(Step {
+                    kind: "reply",
+                    text: event["text"].as_str().unwrap_or("").to_string(),
+                });
             }
             (Some("result"), _) if event["is_error"] == true => {
                 if waits_grok {
@@ -354,7 +395,10 @@ pub(crate) fn read_progress(log: &str) -> Progress {
                     status = "failed";
                 }
                 if let Some(text) = event["result"].as_str() {
-                    steps.push(Step { kind: "output", text: text.to_string() });
+                    steps.push(Step {
+                        kind: "output",
+                        text: text.to_string(),
+                    });
                 }
             }
             (Some("result"), _) => status = "finished",
@@ -372,30 +416,37 @@ pub(crate) fn read_progress(log: &str) -> Progress {
 
 fn message_text(event: &Value) -> String {
     let blocks = event["message"]["content"].as_array().into_iter().flatten();
-    let texts: Vec<&str> = blocks.filter(|block| block["type"] == "text").filter_map(|block| block["text"].as_str()).collect();
+    let texts: Vec<&str> = blocks
+        .filter(|block| block["type"] == "text")
+        .filter_map(|block| block["text"].as_str())
+        .collect();
     texts.concat().trim().to_string()
 }
 
 fn tool_text(call: &Value) -> String {
-    let tool = call.as_object().and_then(|call| call.iter().find(|(key, _)| key.ends_with("ToolCall")));
+    let tool = call
+        .as_object()
+        .and_then(|call| call.iter().find(|(key, _)| key.ends_with("ToolCall")));
     let Some((key, tool)) = tool else {
-        return call["function"]["name"].as_str().unwrap_or("tool").to_string();
+        return call["function"]["name"]
+            .as_str()
+            .unwrap_or("tool")
+            .to_string();
     };
     let name = key.trim_end_matches("ToolCall");
-    match TOOL_DETAILS.iter().find_map(|field| tool["args"][*field].as_str()) {
+    match TOOL_DETAILS
+        .iter()
+        .find_map(|field| tool["args"][*field].as_str())
+    {
         Some(detail) => format!("{name}: {detail}"),
         None => name.to_string(),
     }
 }
 
-pub(crate) fn load_tabs(projects_file: &Path, home: &str) -> Result<Vec<Tab>, String> {
-    let projects = read_projects(projects_file)?;
-    Ok(projects.iter().map(|(id, project)| project_tab(id, project, home)).collect())
-}
-
 pub fn read_projects(projects_file: &Path) -> Result<Map<String, Value>, String> {
     let name = projects_file.display();
-    let text = fs::read_to_string(projects_file).map_err(|e| format!("failed to read {name}: {e}"))?;
+    let text =
+        fs::read_to_string(projects_file).map_err(|e| format!("failed to read {name}: {e}"))?;
     serde_json::from_str(&text).map_err(|e| format!("failed to parse {name}: {e}"))
 }
 
@@ -405,63 +456,4 @@ pub fn project_root(project: &Value, home: &str) -> Option<PathBuf> {
         Some(rest) => Path::new(home).join(rest),
         None => PathBuf::from(path),
     })
-}
-
-pub(crate) fn find_item(projects: &Map<String, Value>, home: &str, req: &ResolveRequest) -> Result<(PathBuf, Value), ResolveError> {
-    let bad = |msg: &str| ResolveError::BadItem(msg.to_string());
-    let root = projects.get(&req.tab).and_then(|project| project_root(project, home)).ok_or_else(|| bad("Unknown project."))?;
-    let groups = read_groups(&root).map_err(ResolveError::Failed)?;
-    let item = groups
-        .iter()
-        .filter(|group| group["spec"] == req.spec.as_str())
-        .flat_map(|group| group["items"].as_array().into_iter().flatten())
-        .find(|item| item["id"].as_u64() == Some(req.id))
-        .ok_or_else(|| bad("Unknown item."))?;
-    Ok((root, item.clone()))
-}
-
-pub(crate) fn local_prompt(req: &ResolveRequest, root: &Path, item: &Value, decision: &str) -> String {
-    let item = serde_json::to_string_pretty(item).unwrap_or_default();
-    format!(
-        "Resolve one open-behaviour item of the project `{tab}`. The project is at `{root}`.\n\n\
-         - File: `{FILE_PATH}`\n\
-         - Spec: `{spec}`\n\
-         - Item: #{id}\n\n\
-         The item:\n\n```json\n{item}\n```\n\n\
-         The final decision of the user:\n\n{decision}\n\n\
-         Resolve the item as the final decision tells. When the item is resolved, remove the whole item #{id} object \
-         from the `items` list of the `{spec}` entry in `{FILE_PATH}`. Do not keep the item with a resolved status or a note. \
-         Obey `AGENTS.md`.",
-        tab = req.tab,
-        root = root.display(),
-        spec = req.spec,
-        id = req.id,
-    )
-}
-
-fn project_tab(id: &str, project: &Value, home: &str) -> Tab {
-    let mut tab = Tab {
-        id: id.to_string(),
-        name: id.to_string(),
-        groups: Vec::new(),
-        errors: Vec::new(),
-    };
-    let Some(root) = project_root(project, home) else {
-        tab.errors.push(format!("{id} has no path in conf/projects.json"));
-        return tab;
-    };
-    match read_groups(&root) {
-        Ok(groups) => tab.groups = groups,
-        Err(e) => tab.errors.push(e),
-    }
-    tab
-}
-
-fn read_groups(root: &Path) -> Result<Vec<Value>, String> {
-    let file = root.join(FILE_PATH);
-    if !file.is_file() {
-        return Ok(Vec::new());
-    }
-    let text = fs::read_to_string(&file).map_err(|e| format!("failed to read {FILE_PATH}: {e}"))?;
-    serde_json::from_str(&text).map_err(|e| format!("failed to parse {FILE_PATH}: {e}"))
 }

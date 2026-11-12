@@ -13,14 +13,19 @@ pub struct Db {
 impl Db {
     pub fn open(path: &str) -> Result<Self, String> {
         let conn = Connection::open(path).map_err(|e| format!("failed to open {path}: {e}"))?;
-        conn.execute_batch(SCHEMA).map_err(|e| format!("failed to create table page: {e}"))?;
-        Ok(Self { conn: Mutex::new(conn) })
+        conn.execute_batch(SCHEMA)
+            .map_err(|e| format!("failed to create table page: {e}"))?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub fn load_page(&self, name: &str) -> Result<Value, String> {
         let data: Option<String> = self
             .lock()
-            .query_row("SELECT data FROM page WHERE name = ?1", [name], |row| row.get(0))
+            .query_row("SELECT data FROM page WHERE name = ?1", [name], |row| {
+                row.get(0)
+            })
             .optional()
             .map_err(|e| e.to_string())?;
         match data {
@@ -30,7 +35,10 @@ impl Db {
     }
 
     pub fn save_page(&self, name: &str, data: &Value) -> Result<(), String> {
-        let saved_at = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+        let saved_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
         self.lock()
             .execute(
                 "INSERT INTO page (name, data, saved_at) VALUES (?1, ?2, ?3) \

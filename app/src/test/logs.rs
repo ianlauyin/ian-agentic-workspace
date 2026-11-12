@@ -44,7 +44,11 @@ fn page_of_uses_the_page_size_and_the_filters() {
         value: "48".to_string(),
     }];
     assert_eq!(page_of(all, &dotted, 1, 50).total, 1);
-    let text = vec![json!({ "info": "{\"code\":5}" }), json!({ "info": "not json" }), json!({ "info": { "code": null } })];
+    let text = vec![
+        json!({ "info": "{\"code\":5}" }),
+        json!({ "info": "not json" }),
+        json!({ "info": { "code": null } }),
+    ];
     assert_eq!(page_of(text, &filters[..1], 1, 50).total, 1);
 }
 

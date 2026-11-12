@@ -3,7 +3,9 @@ use std::path::Path;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::open_behaviour::{PROJECTS_FILE, ResolveError, ResolveStart, project_root, read_projects, start_agent};
+use crate::open_behaviour::{
+    PROJECTS_FILE, ResolveError, ResolveStart, project_root, read_projects, start_agent,
+};
 
 #[derive(Serialize)]
 pub struct Project {
@@ -19,7 +21,15 @@ pub struct AssignRequest {
 
 pub async fn projects() -> Result<Json<Vec<Project>>, ResolveError> {
     let projects = read_projects(Path::new(PROJECTS_FILE)).map_err(ResolveError::Failed)?;
-    Ok(Json(projects.keys().map(|id| Project { id: id.clone(), name: id.clone() }).collect()))
+    Ok(Json(
+        projects
+            .keys()
+            .map(|id| Project {
+                id: id.clone(),
+                name: id.clone(),
+            })
+            .collect(),
+    ))
 }
 
 pub async fn assign(Json(req): Json<AssignRequest>) -> Result<Json<ResolveStart>, ResolveError> {
@@ -30,8 +40,12 @@ pub async fn assign(Json(req): Json<AssignRequest>) -> Result<Json<ResolveStart>
         return Err(bad("The note has no text."));
     }
     let projects = read_projects(Path::new(PROJECTS_FILE)).map_err(ResolveError::Failed)?;
-    let root = projects.get(&req.tab).and_then(|project| project_root(project, &home)).ok_or_else(|| bad("Unknown project."))?;
-    let chat = start_agent(&root, &task_prompt(&req.tab, &root, text)).map_err(ResolveError::Failed)?;
+    let root = projects
+        .get(&req.tab)
+        .and_then(|project| project_root(project, &home))
+        .ok_or_else(|| bad("Unknown project."))?;
+    let chat =
+        start_agent(&root, &task_prompt(&req.tab, &root, text)).map_err(ResolveError::Failed)?;
     Ok(Json(ResolveStart::new(chat)))
 }
 
