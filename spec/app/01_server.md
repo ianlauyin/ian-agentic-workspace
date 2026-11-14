@@ -36,7 +36,7 @@
 | `POST /open-behaviour-followup` | Sends `{"chat": "<chat id>", "text": "..."}` to the agent of that chat as a follow-up. Returns the progress, as `GET /open-behaviour-progress` does. A bad chat id, an empty text, a chat with no log, or an agent that still works returns 400. Refer to `spec/app/04_notes.md`. |
 | `GET /projects` | Returns `[{"id": "<project>", "name": "<project>"}]` for the projects in `conf/projects.json`. Refer to `spec/app/04_notes.md`. |
 | `POST /notes-assign` | Starts an agent in the folder of project `tab` with the note `text` as the task. Returns `{"chat": "<chat id>"}`. An empty text or an unknown project returns 400. Refer to `spec/app/04_notes.md`. |
-| `GET /logs-apps` | Returns `[{"id": "<app>", "name": "<app>"}]` for the apps in `conf/log-server.json`. Refer to `spec/app/05_logs.md`. |
-| `GET /logs-events` | Returns one page of the events of `app` on `date` as `{"page", "page_size", "total", "events"}`, newest first. A bad app, date, or page returns 400. Refer to `spec/app/05_logs.md`. |
+| `GET /logs-apps` | Returns `[{"id": "<key>", "name": "<key>", "apps": [{"id": "<app>", "name": "<app>"}]}]` for the keys of `conf/log-server.json`. Refer to `spec/app/05_logs.md`. |
+| `GET /logs-events` | Returns one page of the events of `app` on `server` and `date` as `{"page", "page_size", "total", "events"}`, newest first. A bad server, app, date, or page returns 400. Refer to `spec/app/05_logs.md`. |
 
 - A page name has only letters, digits, and `-`. Other names return 400.

@@ -72,6 +72,59 @@ fn read_env_value_finds_the_name() {
 }
 
 #[test]
+fn read_config_reads_each_server_in_file_order() {
+    let path = std::env::temp_dir().join("agentic-workspace-test-logs-config.json");
+    std::fs::write(
+        &path,
+        r#"{
+          "one": {
+            "base_url": "https://one.example/",
+            "route": "GET /log/{app}",
+            "api_key": "env:APP_KEY",
+            "apps": { "Alpha": "alpha", "Skip": 1, "Beta": "beta" }
+          },
+          "two": {
+            "base_url": "https://two.example",
+            "api_key": "env:OTHER_KEY",
+            "apps": {}
+          }
+        }"#,
+    )
+    .unwrap();
+    let config = read_config(&path).unwrap();
+    assert_eq!(config.servers.len(), 2);
+    assert_eq!(config.servers[0].name, "one");
+    assert_eq!(config.servers[0].base_url, "https://one.example/");
+    assert_eq!(config.servers[0].key_name, "APP_KEY");
+    assert_eq!(
+        config.servers[0].apps,
+        vec![
+            ("Alpha".to_string(), "alpha".to_string()),
+            ("Beta".to_string(), "beta".to_string())
+        ]
+    );
+    assert_eq!(config.servers[1].name, "two");
+    assert_eq!(config.servers[1].key_name, "OTHER_KEY");
+    assert!(config.servers[1].apps.is_empty());
+}
+
+#[test]
+fn read_config_rejects_a_bad_file() {
+    let path = std::env::temp_dir().join("agentic-workspace-test-logs-config-bad.json");
+    for text in [
+        "[]",
+        r#"{"one":"no"}"#,
+        r#"{"one":{"base_url":"https://one.example/","api_key":"APP_KEY","apps":{}}}"#,
+        r#"{"one":{"base_url":"https://one.example/","api_key":"env:","apps":{}}}"#,
+        r#"{"one":{"api_key":"env:APP_KEY","apps":{}}}"#,
+        r#"{"one":{"base_url":"https://one.example/","api_key":"env:APP_KEY"}}"#,
+    ] {
+        std::fs::write(&path, text).unwrap();
+        assert!(read_config(&path).is_err(), "{text}");
+    }
+}
+
+#[test]
 fn parse_events_needs_the_events_list() {
     assert_eq!(parse_events(r#"{"events":[{"a":1}]}"#).unwrap().len(), 1);
     assert!(parse_events(r#"{"x":1}"#).is_err());

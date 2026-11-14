@@ -144,7 +144,11 @@ async fn bad_requests_return_json_errors() {
         (StatusCode::BAD_REQUEST, json!("The note has no text."))
     );
 
-    let (status, body) = send(&app, get("/logs-events?app=my-app&date=2026-10-31&page=0")).await;
+    let (status, body) = send(
+        &app,
+        get("/logs-events?server=one&app=my-app&date=2026-10-31&page=0"),
+    )
+    .await;
     assert_eq!(
         (status, error_of(&body)),
         (StatusCode::BAD_REQUEST, json!("Bad page."))
@@ -152,7 +156,7 @@ async fn bad_requests_return_json_errors() {
 
     let (status, body) = send(
         &app,
-        get("/logs-events?app=my-app&date=2026-10-31&page=1&page_size=10"),
+        get("/logs-events?server=one&app=my-app&date=2026-10-31&page=1&page_size=10"),
     )
     .await;
     assert_eq!(
@@ -162,7 +166,7 @@ async fn bad_requests_return_json_errors() {
 
     let (status, body) = send(
         &app,
-        get("/logs-events?app=my-app&date=2026-10-31&page=1&filters=not-json"),
+        get("/logs-events?server=one&app=my-app&date=2026-10-31&page=1&filters=not-json"),
     )
     .await;
     assert_eq!(

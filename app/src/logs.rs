@@ -22,8 +22,16 @@ pub struct LogApp {
     name: String,
 }
 
+#[derive(Serialize)]
+pub struct LogServer {
+    id: String,
+    name: String,
+    apps: Vec<LogApp>,
+}
+
 #[derive(Deserialize)]
 pub struct LogsRequest {
+    server: String,
     app: String,
     date: String,
     page: usize,
@@ -45,21 +53,34 @@ pub struct LogsPage {
     pub(crate) events: Vec<Value>,
 }
 
-struct Config {
-    base_url: String,
-    key_name: String,
-    apps: Vec<(String, String)>,
+pub(crate) struct Config {
+    pub(crate) servers: Vec<Server>,
 }
 
-pub async fn apps() -> Result<Json<Vec<LogApp>>, ResolveError> {
+pub(crate) struct Server {
+    pub(crate) name: String,
+    pub(crate) base_url: String,
+    pub(crate) key_name: String,
+    pub(crate) apps: Vec<(String, String)>,
+}
+
+pub async fn apps() -> Result<Json<Vec<LogServer>>, ResolveError> {
     let config = read_config(Path::new(CONFIG_FILE)).map_err(ResolveError::Failed)?;
     Ok(Json(
         config
-            .apps
+            .servers
             .into_iter()
-            .map(|(id, _)| LogApp {
-                name: id.clone(),
-                id,
+            .map(|server| LogServer {
+                id: server.name.clone(),
+                name: server.name,
+                apps: server
+                    .apps
+                    .into_iter()
+                    .map(|(id, _)| LogApp {
+                        name: id.clone(),
+                        id,
+                    })
+                    .collect(),
             })
             .collect(),
     ))
@@ -82,17 +103,22 @@ pub async fn load(Query(req): Query<LogsRequest>) -> Result<Json<LogsPage>, Reso
         None => Vec::new(),
     };
     let config = read_config(Path::new(CONFIG_FILE)).map_err(ResolveError::Failed)?;
-    let server_app = config
+    let server = config
+        .servers
+        .iter()
+        .find(|item| item.name == req.server)
+        .ok_or_else(|| bad("Unknown server."))?;
+    let server_app = server
         .apps
         .iter()
         .find(|(id, _)| *id == req.app)
-        .map(|(_, name)| name)
+        .map(|(_, name)| name.as_str())
         .ok_or_else(|| bad("Unknown app."))?;
     let key =
-        read_env_value(Path::new(ENV_FILE), &config.key_name).map_err(ResolveError::Failed)?;
+        read_env_value(Path::new(ENV_FILE), &server.key_name).map_err(ResolveError::Failed)?;
     let url = format!(
         "{}/log/{}?date={}&limit={DAY_LIMIT}",
-        config.base_url.trim_end_matches('/'),
+        server.base_url.trim_end_matches('/'),
         server_app,
         req.date
     );
@@ -112,33 +138,47 @@ pub(crate) fn valid_date(date: &str) -> bool {
         })
 }
 
-fn read_config(path: &Path) -> Result<Config, String> {
+pub(crate) fn read_config(path: &Path) -> Result<Config, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| format!("failed to read conf/log-server.json: {e}"))?;
     let json: Value = serde_json::from_str(&text)
         .map_err(|e| format!("failed to parse conf/log-server.json: {e}"))?;
-    let field = |name: &str| {
-        json[name]
-            .as_str()
-            .map(str::to_string)
-            .ok_or_else(|| format!("conf/log-server.json has no {name}"))
-    };
-    let key_name = field("api_key")?
-        .strip_prefix("env:")
-        .map(str::to_string)
-        .ok_or("api_key in conf/log-server.json is not env:NAME")?;
-    let apps = json["apps"]
+    let map = json
         .as_object()
-        .ok_or("conf/log-server.json has no apps")?;
-    let apps = apps
-        .iter()
-        .filter_map(|(id, name)| Some((id.clone(), name.as_str()?.to_string())))
-        .collect();
-    Ok(Config {
-        base_url: field("base_url")?,
-        key_name,
-        apps,
-    })
+        .ok_or("conf/log-server.json is not an object")?;
+    let mut servers = Vec::new();
+    for (name, value) in map {
+        let entry = value
+            .as_object()
+            .ok_or_else(|| format!("{name} in conf/log-server.json is not an object"))?;
+        let text_field = |key: &str| -> Result<String, String> {
+            entry
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| format!("{name} in conf/log-server.json has no {key}"))
+        };
+        let key_name = text_field("api_key")?
+            .strip_prefix("env:")
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| format!("api_key of {name} in conf/log-server.json is not env:NAME"))?;
+        let apps = entry
+            .get("apps")
+            .and_then(Value::as_object)
+            .ok_or_else(|| format!("{name} in conf/log-server.json has no apps"))?;
+        let apps = apps
+            .iter()
+            .filter_map(|(id, app_name)| Some((id.clone(), app_name.as_str()?.to_string())))
+            .collect();
+        servers.push(Server {
+            name: name.clone(),
+            base_url: text_field("base_url")?,
+            key_name,
+            apps,
+        });
+    }
+    Ok(Config { servers })
 }
 
 pub(crate) fn read_env_value(path: &Path, name: &str) -> Result<String, String> {

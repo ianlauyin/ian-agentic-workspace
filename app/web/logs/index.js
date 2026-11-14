@@ -6,7 +6,8 @@ export function mount(main, api) {
   main.innerHTML = `
     <div id="logs" class="logs-page">
       <h1>Logs</h1>
-      <div class="logs-page-tabs"></div>
+      <div class="logs-page-tabs logs-page-servers"></div>
+      <div class="logs-page-tabs logs-page-apps"></div>
       <p class="error" hidden></p>
       <form class="logs-page-bar logs-page-panel">
         <label>Date (HKT)
@@ -35,7 +36,8 @@ export function mount(main, api) {
         <pre class="text"></pre>
       </dialog>
     </div>`;
-  const tabsBar = main.querySelector(".logs-page-tabs");
+  const serverBar = main.querySelector(".logs-page-servers");
+  const appBar = main.querySelector(".logs-page-apps");
   const error = main.querySelector(".error");
   const dateInput = main.querySelector(".date");
   const pageSize = main.querySelector(".page-size");
@@ -63,7 +65,7 @@ export function mount(main, api) {
   });
 
   dateInput.addEventListener("change", () => {
-    if (dateInput.value) void logs.show(logs.state.app, dateInput.value, 1);
+    if (dateInput.value) void logs.show(logs.state.server, logs.state.app, dateInput.value, 1);
   });
   main.querySelector(".logs-page-panel").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -82,8 +84,27 @@ export function mount(main, api) {
     valueInput.value = "";
     void logs.addFilter(field, value);
   });
-  prev.addEventListener("click", () => void logs.show(logs.state.app, logs.state.date, logs.state.result.page - 1));
-  next.addEventListener("click", () => void logs.show(logs.state.app, logs.state.date, logs.state.result.page + 1));
+  prev.addEventListener("click", () => void logs.show(logs.state.server, logs.state.app, logs.state.date, logs.state.result.page - 1));
+  next.addEventListener("click", () => void logs.show(logs.state.server, logs.state.app, logs.state.date, logs.state.result.page + 1));
+
+  function fillTabs(bar, items, selected, onPick) {
+    const same =
+      bar.childElementCount === items.length &&
+      items.every((item, index) => bar.children[index].dataset.tab === item.id);
+    if (!same) {
+      bar.replaceChildren(
+        ...items.map((item) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.tab = item.id;
+          button.textContent = item.name;
+          button.addEventListener("click", () => onPick(item.id));
+          return button;
+        }),
+      );
+    }
+    for (const button of bar.children) button.classList.toggle("on", button.dataset.tab === selected);
+  }
 
   function eventsTable(events) {
     const columns = logColumns(events);
@@ -109,21 +130,13 @@ export function mount(main, api) {
   }
 
   function render() {
-    const { apps, app, date, result, loading, loaded } = logs.state;
+    const { servers, server, app, date, result, loading, loaded } = logs.state;
     error.textContent = logs.state.error;
     error.hidden = !logs.state.error;
     if (!loaded) return;
-    if (tabsBar.childElementCount === 0) {
-      for (const item of apps) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.dataset.tab = item.id;
-        button.textContent = item.name;
-        button.addEventListener("click", () => void logs.show(item.id, logs.state.date, 1));
-        tabsBar.append(button);
-      }
-    }
-    for (const button of tabsBar.children) button.classList.toggle("on", button.dataset.tab === app);
+    const apps = servers.find((item) => item.id === server)?.apps ?? [];
+    fillTabs(serverBar, servers, server, (id) => void logs.selectServer(id));
+    fillTabs(appBar, apps, app, (id) => void logs.show(logs.state.server, id, logs.state.date, 1));
     dateInput.value = date;
     pageSize.value = logs.state.pageSize;
     refresh.disabled = loading;

@@ -43,33 +43,48 @@ export function cellText(event, column) {
 
 // onChange runs after each change of the state, so the page can render again
 export function createLogs(api, onChange = () => {}) {
-  const state = { apps: [], app: "", date: hktToday(), pageSize: PAGE_SIZES[0], filters: [], result: null, loading: false, loaded: false, error: "" };
+  const state = { servers: [], server: "", app: "", date: hktToday(), pageSize: PAGE_SIZES[0], filters: [], result: null, loading: false, loaded: false, error: "" };
   let requestId = 0;
 
   async function loadApps() {
     try {
-      state.apps = await api.loadLogApps();
-      state.app = state.apps[0]?.id ?? "";
+      state.servers = await api.loadLogApps();
+      state.server = state.servers[0]?.id ?? "";
+      state.app = state.servers[0]?.apps[0]?.id ?? "";
       state.loaded = true;
       state.error = "";
     } catch (e) {
       state.error = `Failed to load the apps: ${e.message}`;
     }
     onChange();
-    if (state.app) await show(state.app, state.date, 1);
+    if (state.server && state.app) await show(state.server, state.app, state.date, 1);
+  }
+
+  function selectServer(server) {
+    if (server === state.server) return;
+    const item = state.servers.find((entry) => entry.id === server);
+    return show(server, item?.apps[0]?.id ?? "", state.date, 1);
   }
 
   // a slow answer for an old tab or page does not replace a newer one
-  async function show(app, date, page) {
+  async function show(server, app, date, page) {
     const id = ++requestId;
+    state.server = server;
     state.app = app;
     state.date = date;
+    if (!app) {
+      state.result = null;
+      state.loading = false;
+      state.error = "";
+      onChange();
+      return;
+    }
     state.loading = true;
     onChange();
     try {
-      const result = await api.loadLogs({ app, date, page, page_size: state.pageSize, filters: JSON.stringify(state.filters) });
+      const result = await api.loadLogs({ server, app, date, page, page_size: state.pageSize, filters: JSON.stringify(state.filters) });
       if (id !== requestId) return;
-      state.result = { ...result, app, date };
+      state.result = { ...result, server, app, date };
       state.error = "";
     } catch (e) {
       if (id !== requestId) return;
@@ -80,7 +95,7 @@ export function createLogs(api, onChange = () => {}) {
     onChange();
   }
 
-  const reload = () => show(state.app, state.date, 1);
+  const reload = () => show(state.server, state.app, state.date, 1);
 
   // a new filter on a field replaces the old filter on that field
   function addFilter(field, value) {
@@ -98,5 +113,5 @@ export function createLogs(api, onChange = () => {}) {
     return reload();
   }
 
-  return { state, loadApps, show, reload, addFilter, removeFilter, setPageSize };
+  return { state, loadApps, selectServer, show, reload, addFilter, removeFilter, setPageSize };
 }
